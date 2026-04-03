@@ -17,7 +17,7 @@
     "channel": {
       "id": "wecom",
       "label": "WeCom",
-      "selectionLabel": "WeCom (Official API)",
+      "selectionLabel": "WeCom (企业微信)",
       "docsPath": "/channels/wecom",
       "docsLabel": "wecom",
       "blurb": "connect to WeCom via official Wecom Bot API with document/meeting/messaging skills."
