@@ -1,11 +1,7 @@
 {
-  "id": "wecom-openclaw-plugin",
-  "channels": [
-    "wecom"
-  ],
-  "skills": [
-    "./skills"
-  ],
+  "id": "wecom",
+  "channels": ["wecom"],
+  "skills": ["./skills"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

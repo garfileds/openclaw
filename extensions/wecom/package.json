@@ -1,14 +1,8 @@
 {
   "name": "@openclaw/wecom",
   "version": "2026.4.3",
-  "private": true,
+  "private": false,
   "description": "OpenClaw WeCom Bot channel plugin",
-  "files": [
-    "dist",
-    "skills",
-    "openclaw.plugin.json",
-    "README.md"
-  ],
   "type": "module",
   "dependencies": {
     "@wecom/aibot-node-sdk": "^1.0.6",
@@ -17,10 +11,22 @@
     "undici": "^7.24.6",
     "zod": "^4.3.6"
   },
+  "devDependencies": {
+    "openclaw": "workspace:*"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.4.3"
+  },
+  "peerDependenciesMeta": {
+    "openclaw": {
+      "optional": true
+    }
+  },
   "openclaw": {
     "extensions": [
       "./index.ts"
     ],
+    "setupEntry": "./setup-entry.ts",
     "channel": {
       "id": "wecom",
       "label": "WeCom",
@@ -28,6 +34,18 @@
       "docsPath": "/channels/wecom",
       "docsLabel": "wecom",
       "blurb": "connect to WeCom via official Wecom Bot API with document/meeting/messaging skills."
+    },
+    "install": {
+      "npmSpec": "@openclaw/wecom",
+      "localPath": "extensions/wecom",
+      "defaultChoice": "npm",
+      "minHostVersion": ">=2026.4.3"
+    },
+    "bundle": {
+      "stageRuntimeDependencies": true
+    },
+    "release": {
+      "publishToNpm": true
     }
   }
 }
