@@ -1,11 +1,11 @@
 /**
- * 企业微信消息内容解析模块
+ * WeCom message content parsing module
  *
- * 负责从 WsFrame 中提取文本、图片、引用等内容
+ * Responsible for extracting text, images, quotes and other content from WsFrame
  */
 
 // ============================================================================
-// 消息体类型（来自 SDK WsFrame.body）
+// Message body types (from SDK WsFrame.body)
 // ============================================================================
 
 export interface MessageBody {
@@ -66,7 +66,7 @@ export interface MessageBody {
 }
 
 // ============================================================================
-// 解析结果类型
+// Parsed result types
 // ============================================================================
 
 export interface ParsedMessageContent {
@@ -79,13 +79,14 @@ export interface ParsedMessageContent {
 }
 
 // ============================================================================
-// 解析函数
+// Parsing functions
 // ============================================================================
 
 /**
- * 将模板卡片事件回调格式化为可继续路由给大模型的文本。
+ * Format a template card event callback into text that can be routed to the LLM.
  *
- * 这样后续 Agent 可以直接从 question_key / option_id 中理解用户的真实选择。
+ * This allows downstream Agents to directly understand the user's actual selection
+ * from the question_key / option_id fields.
  */
 function buildTemplateCardEventText(body: MessageBody): string | undefined {
   const templateCardEvent = body.event?.template_card_event;
@@ -129,8 +130,8 @@ function buildTemplateCardEventText(body: MessageBody): string | undefined {
 }
 
 /**
- * 解析消息内容（支持单条消息、图文混排、事件回调和引用消息）
- * @returns 提取的文本数组、图片URL数组和引用消息内容
+ * Parse message content (supports single messages, mixed text-image messages, event callbacks, and quoted messages)
+ * @returns Extracted text array, image URL array, and quoted message content
  */
 export function parseMessageContent(body: MessageBody): ParsedMessageContent {
   const textParts: string[] = [];
@@ -140,8 +141,8 @@ export function parseMessageContent(body: MessageBody): ParsedMessageContent {
   const fileAesKeys = new Map<string, string>();
   let quoteContent: string | undefined;
 
-  // 处理模板卡片事件回调
-  
+  // Handle template card event callbacks
+
   if (body.msgtype === "event") {
     const eventText = buildTemplateCardEventText(body);
     if (eventText) {
@@ -150,7 +151,7 @@ export function parseMessageContent(body: MessageBody): ParsedMessageContent {
     return { textParts, imageUrls, imageAesKeys, fileUrls, fileAesKeys, quoteContent };
   }
 
-  // 处理图文混排消息
+  // Handle mixed text-image messages
   if (body.msgtype === "mixed" && body.mixed?.msg_item) {
     for (const item of body.mixed.msg_item) {
       if (item.msgtype === "text" && item.text?.content) {
@@ -186,7 +187,7 @@ export function parseMessageContent(body: MessageBody): ParsedMessageContent {
     }
   }
 
-  // 处理引用消息
+  // Handle quoted messages
   if (body.quote) {
     if (body.quote.msgtype === "text" && body.quote.text?.content) {
       quoteContent = body.quote.text.content;
@@ -199,7 +200,7 @@ export function parseMessageContent(body: MessageBody): ParsedMessageContent {
         imageAesKeys.set(body.quote.image.url, body.quote.image.aeskey);
       }
     } else if (body.quote.msgtype === "file" && body.quote.file?.url) {
-      // 引用的文件消息：将文件 URL 加入下载列表
+      // Quoted file message: add file URL to download list
       fileUrls.push(body.quote.file.url);
       if (body.quote.file.aeskey) {
         fileAesKeys.set(body.quote.file.url, body.quote.file.aeskey);

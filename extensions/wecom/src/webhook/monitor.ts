@@ -1,29 +1,23 @@
 /**
- * Webhook 核心消息处理
+ * Webhook core message processing
  *
- * 从 @mocrane/wecom monitor.ts 部分迁移 + 重构。
- * 负责：入站消息解析、防抖聚合、Agent 调度、流式输出、超时兜底。
+ * Migrated from @mocrane/wecom monitor.ts + refactored.
+ * Responsibilities: inbound message parsing, debounce aggregation, Agent dispatch, streaming output, timeout fallback.
  */
 
-import { pathToFileURL } from "node:url";
 import os from "node:os";
-import type {
-  WecomWebhookTarget,
-  WebhookInboundMessage,
-} from "./types.js";
+import { pathToFileURL } from "node:url";
+import {
+  sendText as sendAgentText,
+  uploadMedia,
+  sendMedia as sendAgentMedia,
+} from "../agent/api-client.js";
+import { processDynamicRouting } from "../dynamic-routing.js";
 import {
   resolveWecomCommandAuthorization,
   buildWecomUnauthorizedCommandPrompt,
 } from "./command-auth.js";
-import {
-  STREAM_MAX_BYTES,
-  BOT_WINDOW_MS,
-  BOT_SWITCH_MARGIN_MS,
-  REQUEST_TIMEOUT_MS,
-} from "./types.js";
 import { getMonitorState } from "./gateway.js";
-import { sendText as sendAgentText, uploadMedia, sendMedia as sendAgentMedia } from "../agent/api-client.js";
-import { wecomFetch } from "./http.js";
 import {
   truncateUtf8Bytes,
   appendDmContent,
@@ -47,15 +41,22 @@ import {
   buildStreamPlaceholderReply,
   buildStreamTextPlaceholderReply,
 } from "./helpers.js";
-import { processDynamicRouting } from "../dynamic-routing.js";
+import { wecomFetch } from "./http.js";
+import type { WecomWebhookTarget, WebhookInboundMessage } from "./types.js";
+import {
+  STREAM_MAX_BYTES,
+  BOT_WINDOW_MS,
+  BOT_SWITCH_MARGIN_MS,
+  REQUEST_TIMEOUT_MS,
+} from "./types.js";
 // ============================================================================
-// 入站消息处理
+// Inbound message processing
 // ============================================================================
 
 /**
- * 处理入站消息
+ * Handle inbound message
  *
- * 解析消息类型和内容，创建/获取 stream，加入防抖队列，返回占位符响应。
+ * Parse message type and content, create/get stream, add to debounce queue, return placeholder response.
  */
 export async function handleInboundMessage(
   target: WecomWebhookTarget,
@@ -66,14 +67,14 @@ export async function handleInboundMessage(
   msgFilterData?: {
     senderUserId?: string;
     chatId?: string;
-  }
+  },
 ): Promise<Record<string, unknown> | null> {
   const state = getMonitorState();
 
   const { streamStore, activeReplyStore } = state;
   const msgid = message.msgid;
 
-  // msgid 去重检查
+  // msgid deduplication check
   if (msgid) {
     const existingStreamId = streamStore.getStreamByMsgId(msgid);
     if (existingStreamId) {
@@ -87,7 +88,7 @@ export async function handleInboundMessage(
     }
   }
 
-  // 解析消息内容（对齐原版 buildInboundBody）
+  // Parse message content (aligned with original buildInboundBody)
   const msgContent = buildInboundBody(message);
   if (!msgContent && !hasMedia(message)) {
     target.runtime.log?.(`[webhook] 空消息内容 (type=${message.msgtype}, msgid=${msgid})`);
@@ -95,14 +96,16 @@ export async function handleInboundMessage(
   }
 
   const userid = msgFilterData?.senderUserId ?? "";
-  const chatType = String(message.chattype ?? "").trim().toLowerCase();
+  const chatType = String(message.chattype ?? "")
+    .trim()
+    .toLowerCase();
   const chatId = msgFilterData?.chatId ?? message.chatid ?? "";
-  // 原版 conversationKey 格式：wecom:{accountId}:{userid}:{chatId}
-  // 单聊时 chatId 等于 userid
+  // Original conversationKey format: wecom:{accountId}:{userid}:{chatId}
+  // For single chat, chatId equals userid
   const resolvedChatId = chatId || userid;
   const conversationKey = `wecom:${target.account.accountId}:${userid}:${resolvedChatId}`;
 
-  // 加入防抖队列
+  // Add to debounce queue
   const result = streamStore.addPendingMessage({
     conversationKey,
     target,
@@ -110,7 +113,7 @@ export async function handleInboundMessage(
     msgContent: msgContent ?? "",
     nonce,
     timestamp,
-    debounceMs: (target.account.config as any)?.debounceMs
+    debounceMs: (target.account.config as any)?.debounceMs,
   });
 
   const { streamId, status } = result;
@@ -119,16 +122,12 @@ export async function handleInboundMessage(
     `[webhook] 消息入队 (status=${status}, streamId=${streamId}, convKey=${conversationKey})`,
   );
 
-  // 存储 response_url（对齐原版：同时保存 proxyUrl 用于后续出站请求的代理）
+  // Store response_url (aligned with original: also save proxyUrl for outbound request proxying)
   if (message.response_url) {
-    activeReplyStore.store(
-      streamId,
-      message.response_url,
-      proxyUrl,
-    );
+    activeReplyStore.store(streamId, message.response_url, proxyUrl);
   }
 
-  // 更新 stream 的元数据
+  // Update stream metadata
   streamStore.updateStream(streamId, (s) => {
     s.userId = userid;
     s.chatType = chatType === "group" ? "group" : "direct";
@@ -136,25 +135,29 @@ export async function handleInboundMessage(
     s.aibotid = target.account.botId;
   });
 
-  // 根据 status 返回不同的占位符响应（对齐原版 status 分支处理）
+  // Return different placeholder responses based on status (aligned with original status branch handling)
   const defaultPlaceholder = (target.account.config as any)?.streamPlaceholderContent;
   const queuedPlaceholder = "已收到，已排队处理中...";
   const mergedQueuedPlaceholder = "已收到，已合并排队处理中...";
 
   if (status === "active_new") {
-    // 第一条消息，返回默认占位符
+    // First message, return default placeholder
     return buildStreamPlaceholderReply(streamId, defaultPlaceholder);
   }
 
   if (status === "queued_new") {
-    // 进入排队批次，返回排队提示
-    target.runtime.log?.(`[webhook] queue: 已进入下一批次 streamId=${streamId} msgid=${String(message.msgid ?? "")}`);
+    // Entered queue batch, return queue prompt
+    target.runtime.log?.(
+      `[webhook] queue: 已进入下一批次 streamId=${streamId} msgid=${String(message.msgid ?? "")}`,
+    );
     return buildStreamPlaceholderReply(streamId, queuedPlaceholder);
   }
 
-  // active_merged / queued_merged：合并进某个批次
-  // 为本条 msgid 创建一个"回执 stream"，先显示"已合并排队"，并在批次结束时自动更新为"已合并处理完成"
-  const ackStreamId = streamStore.createStream({ msgid: message.msgid ? String(message.msgid) : undefined });
+  // active_merged / queued_merged: merged into a batch
+  // Create an "ack stream" for this msgid, initially showing "merged queued", auto-updated to "merged done" when batch finishes
+  const ackStreamId = streamStore.createStream({
+    msgid: message.msgid ? String(message.msgid) : undefined,
+  });
   streamStore.updateStream(ackStreamId, (s) => {
     s.finished = false;
     s.started = true;
@@ -171,13 +174,13 @@ export async function handleInboundMessage(
 }
 
 // ============================================================================
-// stream_refresh 处理
+// stream_refresh handling
 // ============================================================================
 
 /**
- * 处理 stream_refresh 请求
+ * Handle stream_refresh request
  *
- * 返回 StreamState 中的当前累积内容、图片附件和 finish 标记。
+ * Returns accumulated content, image attachments, and finish flag from StreamState.
  */
 export async function handleStreamRefresh(
   target: WecomWebhookTarget,
@@ -194,7 +197,7 @@ export async function handleStreamRefresh(
   const stream = state.streamStore.getStream(streamId);
   if (!stream) {
     target.runtime.log?.(`[webhook] stream_refresh: stream ${streamId} 不存在`);
-    // 返回 finish=true 以通知客户端停止轮询
+    // Return finish=true to notify client to stop polling
     return {
       msgtype: "stream",
       stream: { id: streamId, finish: true, content: "" },
@@ -209,13 +212,13 @@ export async function handleStreamRefresh(
 }
 
 // ============================================================================
-// enter_chat 处理
+// enter_chat handling
 // ============================================================================
 
 /**
- * 处理 enter_chat 事件
+ * Handle enter_chat event
  *
- * 返回可配置的欢迎消息。
+ * Returns a configurable welcome message.
  */
 export async function handleEnterChat(
   target: WecomWebhookTarget,
@@ -235,24 +238,24 @@ export async function handleEnterChat(
     };
   }
 
-  // 无欢迎消息配置，返回空回复
+  // No welcome message configured, return empty reply
   return null;
 }
 
 // ============================================================================
-// template_card_event 处理
+// template_card_event handling
 // ============================================================================
 
 /**
- * 处理模板卡片事件（对齐原版 template_card_event 逻辑）
+ * Handle template card event (aligned with original template_card_event logic)
  *
- * 原版流程：
- * 1. msgid 去重：跳过已处理的卡片事件
- * 2. 解析卡片交互数据：event_key、selected_items、task_id
- * 3. 立即返回空加密回复（非阻塞）
- * 4. 创建 stream 并标记开始
- * 5. 存储 response_url（用于后续推送）
- * 6. 构造交互描述文本，作为文本消息启动 Agent 处理
+ * Original flow:
+ * 1. msgid dedup: skip already processed card events
+ * 2. Parse card interaction data: event_key, selected_items, task_id
+ * 3. Return empty encrypted reply immediately (non-blocking)
+ * 4. Create stream and mark as started
+ * 5. Store response_url (for subsequent pushes)
+ * 6. Build interaction description text, start Agent processing as text message
  */
 export async function handleTemplateCardEvent(
   target: WecomWebhookTarget,
@@ -266,7 +269,7 @@ export async function handleTemplateCardEvent(
 
   const msgid = message.msgid ? String(message.msgid) : undefined;
 
-  // 1. msgid 去重：跳过已处理的卡片事件
+  // 1. msgid dedup: skip already processed card events
   if (msgid && streamStore.getStreamByMsgId(msgid)) {
     target.runtime.log?.(
       `[webhook] template_card_event: already processed msgid=${msgid}, skipping`,
@@ -274,13 +277,15 @@ export async function handleTemplateCardEvent(
     return {};
   }
 
-  // 2. 解析卡片交互数据
+  // 2. Parse card interaction data
   const cardEvent = message.event?.template_card_event as Record<string, unknown> | undefined;
   let interactionDesc = `[卡片交互] 按钮: ${String(cardEvent?.event_key ?? "unknown")}`;
 
-  // 解析选择项（selected_items.selected_item）
+  // Parse selected items (selected_items.selected_item)
   const selectedItems = cardEvent?.selected_items as Record<string, unknown> | undefined;
-  const selectedItemList = selectedItems?.selected_item as Array<Record<string, unknown>> | undefined;
+  const selectedItemList = selectedItems?.selected_item as
+    | Array<Record<string, unknown>>
+    | undefined;
   if (Array.isArray(selectedItemList) && selectedItemList.length > 0) {
     const selects = selectedItemList.map((i) => {
       const questionKey = String(i.question_key ?? "");
@@ -291,7 +296,7 @@ export async function handleTemplateCardEvent(
     interactionDesc += ` 选择: ${selects.join("; ")}`;
   }
 
-  // 解析任务 ID
+  // Parse task ID
   if (cardEvent?.task_id) {
     interactionDesc += ` (任务ID: ${String(cardEvent.task_id)})`;
   }
@@ -300,23 +305,23 @@ export async function handleTemplateCardEvent(
     `[webhook] template_card_event (event_key=${String(cardEvent?.event_key ?? "N/A")}, msgid=${msgid ?? "N/A"})`,
   );
 
-  // 3. 创建 stream 并标记开始
+  // 3. Create stream and mark as started
   const streamId = streamStore.createStream({ msgid });
   streamStore.markStarted(streamId);
 
-  // 4. 存储 response_url（用于后续 Agent 输出推送）
+  // 4. Store response_url (for subsequent Agent output pushes)
   if (message.response_url) {
     activeReplyStore.store(streamId, message.response_url, proxyUrl);
   }
 
-  // 5. 构造交互描述作为文本消息，异步启动 Agent 处理
+  // 5. Build interaction description as text message, async start Agent processing
   const syntheticMessage: WebhookInboundMessage = {
     ...message,
     msgtype: "text",
     text: { content: interactionDesc },
   };
 
-  // 异步启动 Agent（不阻塞 HTTP 响应）
+  // Async start Agent (does not block HTTP response)
   startAgentForStream({
     target,
     accountId: target.account.accountId,
@@ -328,24 +333,24 @@ export async function handleTemplateCardEvent(
     target.runtime.error?.(`[webhook] template_card_event Agent failed: ${String(err)}`);
   });
 
-  // 6. 立即返回空回复（非阻塞，原版返回 {} 加密后的）
+  // 6. Return empty reply immediately (non-blocking, original returns {} encrypted)
   return {};
 }
 
 // ============================================================================
-// Agent 调度（startAgentForStream）
+// Agent dispatch (startAgentForStream)
 // ============================================================================
 
 /**
- * **startAgentForStream (启动 Agent 处理流程)**
+ * **startAgentForStream (start Agent processing workflow)**
  *
- * 将接收到的（或聚合的）消息转换为 OpenClaw 内部格式，并分发给对应的 Agent。
- * 包含：
- * 1. 消息解密与媒体保存。
- * 2. 路由解析 (Agent Route)。
- * 3. 会话记录 (Session Recording)。
- * 4. 触发 Agent 响应 (Dispatch Reply)。
- * 5. 处理 Agent 输出（包括文本、Markdown 表格转换、<think> 标签保护、模板卡片识别）。
+ * Converts received (or aggregated) messages into OpenClaw internal format and dispatches to the corresponding Agent.
+ * Includes:
+ * 1. Message decryption and media saving.
+ * 2. Route resolution (Agent Route).
+ * 3. Session recording.
+ * 4. Trigger Agent response (Dispatch Reply).
+ * 5. Process Agent output (including text, Markdown table conversion, <think> tag protection, template card detection).
  */
 export async function startAgentForStream(params: {
   target: WecomWebhookTarget;
@@ -374,11 +379,11 @@ export async function startAgentForStream(params: {
 
   const userid = resolveWecomSenderUserId(msg) || "unknown";
   const chatType = msg.chattype === "group" ? "group" : "direct";
-  const chatId = msg.chattype === "group" ? (msg.chatid?.trim() || "unknown") : userid;
+  const chatId = msg.chattype === "group" ? msg.chatid?.trim() || "unknown" : userid;
   const taskKey = computeTaskKey(target, msg);
   const aibotid = String(msg.aibotid ?? "").trim() || undefined;
 
-  // 更新 Stream 状态：记录上下文信息（用户ID、ChatType等）
+  // Update Stream status: record context info (userId, ChatType, etc.)
   streamStore.updateStream(streamId, (s) => {
     s.userId = userid;
     s.chatType = chatType === "group" ? "group" : "direct";
@@ -392,18 +397,18 @@ export async function startAgentForStream(params: {
   // ──────────────────────────────────────────────────────────────────
   let { body: rawBody, media } = await processInboundMessage(target, msg);
 
-  // 若存在从防抖逻辑聚合来的多条消息内容，则覆盖 rawBody
+  // If debounce-aggregated multi-message content exists, override rawBody
   if (params.mergedContents) {
     rawBody = params.mergedContents;
   }
 
   // ──────────────────────────────────────────────────────────────────
   // 2. P0: 本机路径文件发送
-  // P0: 群聊/私聊里“让 Bot 发送本机图片/文件路径”的场景，优先走 Bot 原会话交付（图片），
-  // 非图片文件则走 Agent 私信兜底，并确保 Bot 会话里有中文提示。
+  // P0: For group/DM scenarios where Bot sends local image/file paths, prefer Bot in-session delivery (images),
+  // non-image files fall back to Agent DM, and ensure Bot session has a Chinese prompt.
   //
-  // 典型背景：Agent 主动发群 chatId（wr/wc...）在很多情况下会 86008，无论怎么“修复”都发不出去；
-  // 这种请求如果能被动回复图片，就必须由 Bot 在群内交付。
+  // Background: Agent sending to group chatId (wr/wc...) often results in 86008 error regardless of "fixes";
+  // if such requests can passively reply with images, they must be delivered by Bot within the group.
   // ──────────────────────────────────────────────────────────────────
   const directLocalPaths = extractLocalFilePathsFromText(rawBody);
   if (directLocalPaths.length) {
@@ -424,7 +429,7 @@ export async function startAgentForStream(params: {
       else otherPaths.push(p);
     }
 
-    // 图片：通过 Bot 原会话交付（base64 msg_item）
+    // Images: deliver via Bot in-session (base64 msg_item)
     if (imagePaths.length > 0 && otherPaths.length === 0) {
       const loaded: Array<{ base64: string; md5: string; path: string }> = [];
       for (const p of imagePaths) {
@@ -441,17 +446,21 @@ export async function startAgentForStream(params: {
       if (loaded.length > 0) {
         streamStore.updateStream(streamId, (s) => {
           s.images = loaded.map(({ base64, md5 }) => ({ base64, md5 }));
-          s.content = loaded.length === 1
-            ? `已发送图片（${pathModule.basename(loaded[0]!.path)}）`
-            : `已发送 ${loaded.length} 张图片`;
+          s.content =
+            loaded.length === 1
+              ? `已发送图片（${pathModule.basename(loaded[0]!.path)}）`
+              : `已发送 ${loaded.length} 张图片`;
           s.finished = true;
         });
 
-        // 通过 response_url 推送（对齐 lh 版：直接 POST JSON，不加密）
+        // Push via response_url (aligned with lh version: POST JSON directly, no encryption)
         const responseUrl = getActiveReplyUrl(streamId);
         if (responseUrl) {
           try {
-            const finalReply = buildStreamReplyFromState(streamStore.getStream(streamId)!, STREAM_MAX_BYTES) as unknown as Record<string, unknown>;
+            const finalReply = buildStreamReplyFromState(
+              streamStore.getStream(streamId)!,
+              STREAM_MAX_BYTES,
+            ) as unknown as Record<string, unknown>;
             await useActiveReplyOnce(streamId, async ({ responseUrl, proxyUrl }) => {
               const res = await wecomFetch(
                 responseUrl,
@@ -464,23 +473,30 @@ export async function startAgentForStream(params: {
               );
               if (!res.ok) throw new Error(`local-path image push failed: ${res.status}`);
             });
-            target.runtime.log?.(`[webhook] local-path: 已通过 Bot response_url 推送图片 frames=final images=${loaded.length}`);
+            target.runtime.log?.(
+              `[webhook] local-path: 已通过 Bot response_url 推送图片 frames=final images=${loaded.length}`,
+            );
           } catch (err) {
-            target.runtime.error?.(`[webhook] local-path: Bot 主动推送图片失败（将依赖 stream_refresh 拉取）: ${String(err)}`);
+            target.runtime.error?.(
+              `[webhook] local-path: Bot 主动推送图片失败（将依赖 stream_refresh 拉取）: ${String(err)}`,
+            );
           }
         } else {
-          target.runtime.log?.(`[webhook] local-path: 无 response_url，等待 stream_refresh 拉取最终图片`);
+          target.runtime.log?.(
+            `[webhook] local-path: 无 response_url，等待 stream_refresh 拉取最终图片`,
+          );
         }
-        // 该消息已完成，推进队列处理下一批
+        // This message is complete, advance queue to process next batch
         streamStore.onStreamFinished(streamId);
         return;
       }
 
-      // 图片路径都读取失败时的兜底处理（对齐 lh 版 Webhook 模式）
+      // Fallback when all image paths fail to read (aligned with lh version Webhook mode)
       const agentOk = isAgentConfigured(target);
-      const fallbackName = imagePaths.length === 1
-        ? (imagePaths[0]!.split("/").pop() || "image")
-        : `${imagePaths.length} 张图片`;
+      const fallbackName =
+        imagePaths.length === 1
+          ? imagePaths[0]!.split("/").pop() || "image"
+          : `${imagePaths.length} 张图片`;
       const prompt = buildFallbackPrompt({
         kind: "media",
         agentConfigured: agentOk,
@@ -500,7 +516,9 @@ export async function startAgentForStream(params: {
         await sendBotFallbackPromptNow({ streamId, text: prompt });
         target.runtime.log?.(`[webhook] local-path: 图片读取失败后已推送兜底提示`);
       } catch (err) {
-        target.runtime.error?.(`[webhook] local-path: 图片读取失败后的兜底提示推送失败: ${String(err)}`);
+        target.runtime.error?.(
+          `[webhook] local-path: 图片读取失败后的兜底提示推送失败: ${String(err)}`,
+        );
       }
       // TODO: agent兜底这里需要有agent对象，待对齐lh版本
       if (agentOk && userid && userid !== "unknown") {
@@ -521,7 +539,9 @@ export async function startAgentForStream(params: {
               `[webhook] local-path: 图片已通过 Agent 私信发送 user=${userid} path=${p} contentType=${guessedType ?? "unknown"}`,
             );
           } catch (err) {
-            target.runtime.error?.(`[webhook] local-path: 图片 Agent 私信兜底失败 path=${p}: ${String(err)}`);
+            target.runtime.error?.(
+              `[webhook] local-path: 图片 Agent 私信兜底失败 path=${p}: ${String(err)}`,
+            );
           }
         }
       }
@@ -529,11 +549,12 @@ export async function startAgentForStream(params: {
       return;
     }
 
-    // 非图片文件：Bot 提示 + Agent 私信兜底（对齐 lh 版 Webhook 模式）
+    // Non-image files: Bot prompt + Agent DM fallback (aligned with lh version Webhook mode)
     if (otherPaths.length > 0) {
       const agentOk = isAgentConfigured(target);
 
-      const filename = otherPaths.length === 1 ? otherPaths[0]!.split("/").pop()! : `${otherPaths.length} 个文件`;
+      const filename =
+        otherPaths.length === 1 ? otherPaths[0]!.split("/").pop()! : `${otherPaths.length} 个文件`;
       const prompt = buildFallbackPrompt({
         kind: "media",
         agentConfigured: agentOk,
@@ -561,7 +582,9 @@ export async function startAgentForStream(params: {
         return;
       }
       if (!userid || userid === "unknown") {
-        target.runtime.error?.(`[webhook] local-path: 无法识别触发者 userId，无法 Agent 私信发送文件`);
+        target.runtime.error?.(
+          `[webhook] local-path: 无法识别触发者 userId，无法 Agent 私信发送文件`,
+        );
         streamStore.onStreamFinished(streamId);
         return;
       }
@@ -586,7 +609,9 @@ export async function startAgentForStream(params: {
             `[webhook] local-path: 文件已通过 Agent 私信发送 user=${userid} path=${p} contentType=${guessedType ?? "unknown"}`,
           );
         } catch (err) {
-          target.runtime.error?.(`[webhook] local-path: Agent 私信发送文件失败 path=${p}: ${String(err)}`);
+          target.runtime.error?.(
+            `[webhook] local-path: Agent 私信发送文件失败 path=${p}: ${String(err)}`,
+          );
         }
       }
       streamStore.onStreamFinished(streamId);
@@ -654,7 +679,7 @@ export async function startAgentForStream(params: {
     error: (msg) => target.runtime.error?.(msg.replace(/^\[dynamic-routing\]/, "[webhook]")),
   });
 
-  // 应用动态路由结果
+  // Apply dynamic routing result
   if (routingResult.routeModified) {
     route.agentId = routingResult.finalAgentId;
     route.sessionKey = routingResult.finalSessionKey;
@@ -695,7 +720,7 @@ export async function startAgentForStream(params: {
     `[webhook] authz: dmPolicy=${authz.dmPolicy} shouldCompute=${authz.shouldComputeAuth} sender=${userid.toLowerCase()} senderAllowed=${authz.senderAllowed} authorizerConfigured=${authz.authorizerConfigured} commandAuthorized=${String(commandAuthorized)}`,
   );
 
-  // 命令门禁：如果这是命令且未授权，必须给用户一个明确的中文回复（不能静默忽略）
+  // Command gate: if this is a command and unauthorized, must give user a clear Chinese reply (cannot silently ignore)
   if (authz.shouldComputeAuth && authz.commandAuthorized !== true) {
     const prompt = buildWecomUnauthorizedCommandPrompt({
       senderUserId: userid,
@@ -710,7 +735,9 @@ export async function startAgentForStream(params: {
       await sendBotFallbackPromptNow({ streamId, text: prompt });
       target.runtime.log?.(`[webhook] authz: 未授权命令已提示用户 streamId=${streamId}`);
     } catch (err) {
-      target.runtime.error?.(`[webhook] authz: 未授权命令提示推送失败 streamId=${streamId}: ${String(err)}`);
+      target.runtime.error?.(
+        `[webhook] authz: 未授权命令提示推送失败 streamId=${streamId}: ${String(err)}`,
+      );
     }
     streamStore.onStreamFinished(streamId);
     return;
@@ -721,25 +748,30 @@ export async function startAgentForStream(params: {
   // ──────────────────────────────────────────────────────────────────
   const rawBodyNormalized = rawBody.trim();
   const isResetCommand = /^\/(new|reset)(?:\s|$)/i.test(rawBodyNormalized);
-  const resetCommandKind = isResetCommand ? (rawBodyNormalized.match(/^\/(new|reset)/i)?.[1]?.toLowerCase() ?? "new") : null;
+  const resetCommandKind = isResetCommand
+    ? (rawBodyNormalized.match(/^\/(new|reset)/i)?.[1]?.toLowerCase() ?? "new")
+    : null;
 
   // ──────────────────────────────────────────────────────────────────
   // 7. 构造附件
   // ──────────────────────────────────────────────────────────────────
-  const attachments: Array<{ name: string; mimeType?: string; url: string }> | undefined =
-    mediaPath ? [{ 
-      name: media?.filename || "file",
-      mimeType: mediaType,
-      url: pathToFileURL(mediaPath).href
-    }] : undefined;
+  const attachments: Array<{ name: string; mimeType?: string; url: string }> | undefined = mediaPath
+    ? [
+        {
+          name: media?.filename || "file",
+          mimeType: mediaType,
+          url: pathToFileURL(mediaPath).href,
+        },
+      ]
+    : undefined;
 
-  // 如果提取到了视频第一帧，追加为附件让 LLM 能看到视频画面
+  // If video first frame was extracted, append as attachment so LLM can see the video frame
   if (videoFirstFramePath && attachments) {
     const pathModule = await import("node:path");
     attachments.push({
       name: pathModule.basename(videoFirstFramePath),
       mimeType: "image/jpeg",
-      url: pathToFileURL(videoFirstFramePath).href
+      url: pathToFileURL(videoFirstFramePath).href,
     });
   }
 
@@ -798,8 +830,8 @@ export async function startAgentForStream(params: {
   // - 图片应尽量由 Bot 在原会话交付（流式最终帧 msg_item）。
   // - 非图片文件走 Agent 私信兜底（本文件中实现），并由 Bot 给出提示。
   //
-  // 重要：message 工具不是 sandbox 工具，必须通过 cfg.tools.deny 禁用。
-  // 否则 Agent 可能直接通过 message 工具私信/发群，绕过 Bot 交付链路，导致群里“没有任何提示”。
+  // Important: message tool is not a sandbox tool; must be disabled via cfg.tools.deny.
+  // Otherwise Agent may DM/send to group directly via message tool, bypassing Bot delivery chain, causing "no prompt" in group.
   const cfgForDispatch = buildCfgForDispatch(config);
 
   // ──────────────────────────────────────────────────────────────────
@@ -812,7 +844,10 @@ export async function startAgentForStream(params: {
       disableBlockStreaming: false,
     },
     dispatcherOptions: {
-      deliver: async (payload: { text?: string; mediaUrl?: string; mediaUrls?: string[] }, info: { kind: string }) => {
+      deliver: async (
+        payload: { text?: string; mediaUrl?: string; mediaUrls?: string[] },
+        info: { kind: string },
+      ) => {
         let text = payload.text ?? "";
 
         // ── <think> 标签保护 ──
@@ -833,7 +868,7 @@ export async function startAgentForStream(params: {
               const responseUrl = getActiveReplyUrl(streamId);
 
               if (responseUrl && isSingleChat) {
-                // 单聊且有 response_url：发送卡片
+                // Single chat with response_url: send card
                 await useActiveReplyOnce(streamId, async ({ responseUrl, proxyUrl }) => {
                   const res = await wecomFetch(
                     responseUrl,
@@ -851,7 +886,9 @@ export async function startAgentForStream(params: {
                     throw new Error(`template_card send failed: ${res.status}`);
                   }
                 });
-                target.runtime.log?.(`[webhook] sent template_card: task_id=${parsed.template_card.task_id}`);
+                target.runtime.log?.(
+                  `[webhook] sent template_card: task_id=${parsed.template_card.task_id}`,
+                );
                 streamStore.updateStream(streamId, (s) => {
                   s.finished = true;
                   s.content = "[已发送交互卡片]";
@@ -859,21 +896,26 @@ export async function startAgentForStream(params: {
                 target.statusSink?.({ lastOutboundAt: Date.now() });
                 return;
               } else {
-                // 群聊 或 无 response_url：降级为文本描述
-                target.runtime.log?.(`[webhook] template_card fallback to text (group=${!isSingleChat}, hasUrl=${!!responseUrl})`);
+                // Group chat or no response_url: degrade to text description
+                target.runtime.log?.(
+                  `[webhook] template_card fallback to text (group=${!isSingleChat}, hasUrl=${!!responseUrl})`,
+                );
                 const cardTitle = parsed.template_card.main_title?.title || "交互卡片";
                 const cardDesc = parsed.template_card.main_title?.desc || "";
-                const buttons = parsed.template_card.button_list?.map((b: any) => b.text).join(" / ") || "";
+                const buttons =
+                  parsed.template_card.button_list?.map((b: any) => b.text).join(" / ") || "";
                 text = `📋 **${cardTitle}**${cardDesc ? `\n${cardDesc}` : ""}${buttons ? `\n\n选项: ${buttons}` : ""}`;
               }
             }
-          } catch { /* parse fail, use normal text */ }
+          } catch {
+            /* parse fail, use normal text */
+          }
         }
 
-        // ── Markdown 表格转换 ──
+        // ── Markdown table conversion ──
         text = core.channel.text.convertMarkdownTables(text, tableMode);
 
-        // ── 还原 <think> 标签 ──
+        // ── Restore <think> tags ──
         thinks.forEach((think, i) => {
           text = text.replace(`__THINK_PLACEHOLDER_${i}__`, think);
         });
@@ -888,7 +930,9 @@ export async function startAgentForStream(params: {
         if (!payload.mediaUrl && !(payload.mediaUrls?.length ?? 0) && text.includes("/")) {
           const candidates = extractLocalImagePathsFromText({ text, mustAlsoAppearIn: rawBody });
           if (candidates.length > 0) {
-            target.runtime.log?.(`media: 从输出文本推断到本机图片路径（来自用户原消息）count=${candidates.length}`);
+            target.runtime.log?.(
+              `media: 从输出文本推断到本机图片路径（来自用户原消息）count=${candidates.length}`,
+            );
             for (const p of candidates) {
               try {
                 const fs = await import("node:fs/promises");
@@ -911,7 +955,9 @@ export async function startAgentForStream(params: {
                 const md5 = computeMd5(buf);
                 current.images.push({ base64, md5 });
               } catch (err) {
-                target.runtime.error?.(`[webhook] media: 读取本机图片失败 path=${p}: ${String(err)}`);
+                target.runtime.error?.(
+                  `[webhook] media: 读取本机图片失败 path=${p}: ${String(err)}`,
+                );
               }
             }
           }
@@ -950,7 +996,9 @@ export async function startAgentForStream(params: {
             await sendBotFallbackPromptNow({ streamId, text: prompt });
             target.runtime.log?.(`[webhook] fallback(timeout): 群内提示已推送`);
           } catch (err) {
-            target.runtime.error?.(`[webhook] fallback(timeout) prompt push failed streamId=${streamId}: ${String(err)}`);
+            target.runtime.error?.(
+              `[webhook] fallback(timeout) prompt push failed streamId=${streamId}: ${String(err)}`,
+            );
           }
           return;
         }
@@ -969,15 +1017,20 @@ export async function startAgentForStream(params: {
           if (!mediaDirectivePaths.includes(p)) mediaDirectivePaths.push(p);
         }
         if (mediaDirectivePaths.length > 0) {
-          text = text.replace(/^MEDIA:\s*`?[^\n`]+?`?\s*$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+          text = text
+            .replace(/^MEDIA:\s*`?[^\n`]+?`?\s*$/gm, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
         }
 
         // ── 媒体处理（对齐 lh 版） ──
-        const mediaUrls = Array.from(new Set([
-          ...(payload.mediaUrls || []),
-          ...(payload.mediaUrl ? [payload.mediaUrl] : []),
-          ...mediaDirectivePaths,
-        ]));
+        const mediaUrls = Array.from(
+          new Set([
+            ...(payload.mediaUrls || []),
+            ...(payload.mediaUrl ? [payload.mediaUrl] : []),
+            ...mediaDirectivePaths,
+          ]),
+        );
         for (const mPath of mediaUrls) {
           let contentType: string | undefined;
           let filename = mPath.split("/").pop() || "attachment";
@@ -1001,11 +1054,13 @@ export async function startAgentForStream(params: {
             }
 
             if (contentType?.startsWith("image/")) {
-              // 非 WS 模式：保持原有 base64 嵌入方式
+              // Non-WS mode: keep original base64 embed approach
               const base64 = buf.toString("base64");
               const md5 = computeMd5(buf);
               current.images.push({ base64, md5 });
-              target.runtime.log?.(`[webhook] media: 识别为图片 contentType=${contentType} filename=${filename}`);
+              target.runtime.log?.(
+                `[webhook] media: 识别为图片 contentType=${contentType} filename=${filename}`,
+              );
             } else {
               // Webhook 模式：统一切换到 Agent 私信兜底，并在 Bot 会话里提示用户。
               const agentOk = isAgentConfigured(target);
@@ -1024,7 +1079,9 @@ export async function startAgentForStream(params: {
                     contentType,
                     filename,
                   });
-                  target.runtime.log?.(`[webhook] fallback(media): 文件已通过 Agent 私信发送 user=${current.userId}`);
+                  target.runtime.log?.(
+                    `[webhook] fallback(media): 文件已通过 Agent 私信发送 user=${current.userId}`,
+                  );
                   streamStore.updateStream(streamId, (s) => {
                     s.agentMediaKeys = Array.from(new Set([...(s.agentMediaKeys ?? []), mPath]));
                   });
@@ -1051,7 +1108,9 @@ export async function startAgentForStream(params: {
                   await sendBotFallbackPromptNow({ streamId, text: prompt });
                   target.runtime.log?.(`[webhook] fallback(media): 群内提示已推送`);
                 } catch (err) {
-                  target.runtime.error?.(`[webhook] fallback(media) prompt push failed streamId=${streamId}: ${String(err)}`);
+                  target.runtime.error?.(
+                    `[webhook] fallback(media) prompt push failed streamId=${streamId}: ${String(err)}`,
+                  );
                 }
               }
               return;
@@ -1074,9 +1133,13 @@ export async function startAgentForStream(params: {
                 streamStore.updateStream(streamId, (s) => {
                   s.agentMediaKeys = Array.from(new Set([...(s.agentMediaKeys ?? []), mPath]));
                 });
-                target.runtime.log?.(`[webhook] fallback(error): 媒体处理失败后已通过 Agent 私信发送 user=${current.userId}`);
+                target.runtime.log?.(
+                  `[webhook] fallback(error): 媒体处理失败后已通过 Agent 私信发送 user=${current.userId}`,
+                );
               } catch (sendErr) {
-                target.runtime.error?.(`[webhook] fallback(error): 媒体处理失败后的 Agent 私信发送也失败: ${String(sendErr)}`);
+                target.runtime.error?.(
+                  `[webhook] fallback(error): 媒体处理失败后的 Agent 私信发送也失败: ${String(sendErr)}`,
+                );
               }
             }
             if (!current.fallbackMode) {
@@ -1097,7 +1160,9 @@ export async function startAgentForStream(params: {
                 await sendBotFallbackPromptNow({ streamId, text: prompt });
                 target.runtime.log?.(`[webhook] fallback(error): 群内提示已推送`);
               } catch (pushErr) {
-                target.runtime.error?.(`[webhook] fallback(error) prompt push failed streamId=${streamId}: ${String(pushErr)}`);
+                target.runtime.error?.(
+                  `[webhook] fallback(error) prompt push failed streamId=${streamId}: ${String(pushErr)}`,
+                );
               }
             }
             return;
@@ -1109,9 +1174,7 @@ export async function startAgentForStream(params: {
         if (mode) return;
 
         // ── 累积 content（段落分隔 \n\n，truncate 保护） ──
-        const nextText = current.content
-          ? `${current.content}\n\n${text}`.trim()
-          : text.trim();
+        const nextText = current.content ? `${current.content}\n\n${text}`.trim() : text.trim();
 
         streamStore.updateStream(streamId, (s) => {
           s.content = truncateUtf8Bytes(nextText, STREAM_MAX_BYTES);
@@ -1121,7 +1184,9 @@ export async function startAgentForStream(params: {
       },
 
       onError: (err: unknown) => {
-        target.runtime.error?.(`[webhook] Agent reply failed (streamId=${streamId}): ${String(err)}`);
+        target.runtime.error?.(
+          `[webhook] Agent reply failed (streamId=${streamId}): ${String(err)}`,
+        );
       },
     },
   });
@@ -1133,11 +1198,14 @@ export async function startAgentForStream(params: {
     const current = streamStore.getStream(streamId);
     if (current && !current.content?.trim()) {
       const ackText = resetCommandKind === "reset" ? "✅ 已重置会话。" : "✅ 已开启新会话。";
-      streamStore.updateStream(streamId, (s) => { s.content = ackText; s.finished = true; });
+      streamStore.updateStream(streamId, (s) => {
+        s.content = ackText;
+        s.finished = true;
+      });
     }
   }
 
-  // 空内容兜底
+  // Empty content fallback
   streamStore.updateStream(streamId, (s) => {
     if (!s.content.trim() && !(s.images?.length ?? 0)) {
       const hasMediaDelivered = (s.agentMediaKeys?.length ?? 0) > 0;
@@ -1160,19 +1228,27 @@ export async function startAgentForStream(params: {
   if (finishedState?.fallbackMode === "timeout" && !finishedState.finalDeliveredAt) {
     if (!isAgentConfigured(target)) {
       // Agent not configured - group prompt already explains the situation.
-      streamStore.updateStream(streamId, (s) => { s.finalDeliveredAt = Date.now(); });
+      streamStore.updateStream(streamId, (s) => {
+        s.finalDeliveredAt = Date.now();
+      });
     } else if (finishedState.userId) {
       const dmText = (finishedState.dmContent ?? "").trim();
       if (dmText) {
         try {
-          target.runtime.log?.(`[webhook] fallback(timeout): 开始通过 Agent 私信发送剩余内容 user=${finishedState.userId} len=${dmText.length}`);
+          target.runtime.log?.(
+            `[webhook] fallback(timeout): 开始通过 Agent 私信发送剩余内容 user=${finishedState.userId} len=${dmText.length}`,
+          );
           await agentDmText({ target, userId: finishedState.userId, text: dmText });
-          target.runtime.log?.(`[webhook] fallback(timeout): Agent 私信发送完成 user=${finishedState.userId}`);
+          target.runtime.log?.(
+            `[webhook] fallback(timeout): Agent 私信发送完成 user=${finishedState.userId}`,
+          );
         } catch (err) {
           target.runtime.error?.(`[webhook] fallback(timeout): Agent 私信发送失败: ${String(err)}`);
         }
       }
-      streamStore.updateStream(streamId, (s) => { s.finalDeliveredAt = Date.now(); });
+      streamStore.updateStream(streamId, (s) => {
+        s.finalDeliveredAt = Date.now();
+      });
     }
   }
 
@@ -1188,7 +1264,9 @@ export async function startAgentForStream(params: {
         `[webhook] final stream pushed via response_url streamId=${streamId}, chatType=${chatType}, images=${stateAfterFinish.images?.length ?? 0}`,
       );
     } catch (err) {
-      target.runtime.error?.(`[webhook] final stream push via response_url failed streamId=${streamId}: ${String(err)}`);
+      target.runtime.error?.(
+        `[webhook] final stream push via response_url failed streamId=${streamId}: ${String(err)}`,
+      );
     }
   }
 
@@ -1201,27 +1279,32 @@ export async function startAgentForStream(params: {
   if (ackStreamIds.length > 0) {
     const mergedDoneHint = "✅ 已合并处理完成，请查看上一条回复。";
     for (const ackId of ackStreamIds) {
-      streamStore.updateStream(ackId, (s) => { s.content = mergedDoneHint; s.finished = true; });
+      streamStore.updateStream(ackId, (s) => {
+        s.content = mergedDoneHint;
+        s.finished = true;
+      });
     }
-    target.runtime.log?.(`[webhook] queue: 已更新回执流 count=${ackStreamIds.length} batchStreamId=${streamId}`);
+    target.runtime.log?.(
+      `[webhook] queue: 已更新回执流 count=${ackStreamIds.length} batchStreamId=${streamId}`,
+    );
   }
 
   streamStore.onStreamFinished(streamId);
 }
 
 // ============================================================================
-// 内部辅助：response_url 推送）
+// Internal helpers: response_url push
 // ============================================================================
 
 /**
- * 获取 response_url
+ * Get response_url
  */
 function getActiveReplyUrl(streamId: string): string | undefined {
   return getMonitorState().activeReplyStore.getUrl(streamId);
 }
 
 /**
- * 使用 response_url 发送一次性请求
+ * Send a one-time request using response_url
  */
 async function useActiveReplyOnce(
   streamId: string,
@@ -1231,9 +1314,9 @@ async function useActiveReplyOnce(
 }
 
 /**
- * 通过 response_url 推送 Bot 兜底提示
+ * Push Bot fallback prompt via response_url
  *
- * 对齐 lh 版：直接 POST JSON，不加密。
+ * Aligned with lh version: POST JSON directly, no encryption.
  */
 async function sendBotFallbackPromptNow(params: { streamId: string; text: string }): Promise<void> {
   const responseUrl = getActiveReplyUrl(params.streamId);
@@ -1265,15 +1348,18 @@ async function sendBotFallbackPromptNow(params: { streamId: string; text: string
 }
 
 /**
- * 通过 response_url 推送最终流帧（对齐 lh 版 pushFinalStreamReplyNow）
+ * Push final stream frame via response_url (aligned with lh version pushFinalStreamReplyNow)
  *
- * 对齐 lh 版：从 StreamState 构建完整响应，直接 POST JSON，不加密。
+ * Aligned with lh version: build complete response from StreamState, POST JSON directly, no encryption.
  */
 async function pushFinalStreamReplyNow(streamId: string): Promise<void> {
   const state = getMonitorState().streamStore.getStream(streamId);
   const responseUrl = getActiveReplyUrl(streamId);
   if (!state || !responseUrl) return;
-  const finalReply = buildStreamReplyFromState(state, STREAM_MAX_BYTES) as unknown as Record<string, unknown>;
+  const finalReply = buildStreamReplyFromState(state, STREAM_MAX_BYTES) as unknown as Record<
+    string,
+    unknown
+  >;
   await useActiveReplyOnce(streamId, async ({ responseUrl, proxyUrl }) => {
     const res = await wecomFetch(
       responseUrl,
@@ -1291,9 +1377,9 @@ async function pushFinalStreamReplyNow(streamId: string): Promise<void> {
 }
 
 /**
- * 通过 Agent 私信发送文本（对齐 lh 版 sendAgentDmText）
+ * Send text via Agent DM (aligned with lh version sendAgentDmText)
  *
- * 对齐 lh 版：使用 core.channel.text.chunkText 进行文本分块。
+ * Aligned with lh version: uses core.channel.text.chunkText for text chunking.
  */
 async function agentDmText(params: {
   target: WecomWebhookTarget;
@@ -1310,7 +1396,7 @@ async function agentDmText(params: {
     const trimmed = chunk.trim();
     if (!trimmed) continue;
     await sendAgentText({
-      agent, 
+      agent,
       toUser: userId,
       text: trimmed,
     });
@@ -1318,9 +1404,9 @@ async function agentDmText(params: {
 }
 
 /**
- * 通过 Agent 私信发送媒体（对齐 lh 版 sendAgentDmMedia）
+ * Send media via Agent DM (aligned with lh version sendAgentDmMedia)
  *
- * 对齐 lh 版：接受 mediaUrlOrPath，内部判断 URL 或本地路径。
+ * Aligned with lh version: accepts mediaUrlOrPath, internally determines URL or local path.
  */
 async function agentDmMedia(params: {
   target: WecomWebhookTarget;
@@ -1342,7 +1428,8 @@ async function agentDmMedia(params: {
     const res = await fetch(mediaUrlOrPath, { signal: AbortSignal.timeout(30_000) });
     if (!res.ok) throw new Error(`media download failed: ${res.status}`);
     buffer = Buffer.from(await res.arrayBuffer());
-    inferredContentType = inferredContentType || res.headers.get("content-type") || "application/octet-stream";
+    inferredContentType =
+      inferredContentType || res.headers.get("content-type") || "application/octet-stream";
   } else {
     const fs = await import("node:fs/promises");
     buffer = await fs.readFile(mediaUrlOrPath);
@@ -1355,12 +1442,12 @@ async function agentDmMedia(params: {
   else if (ct.startsWith("video/")) mediaType = "video";
 
   const mediaId = await uploadMedia({ agent, type: mediaType, buffer, filename });
-  
-    await sendAgentMedia({
-        agent,
-        toUser: userId,
-        mediaId,
-        mediaType,
-        ...(mediaType === "video" ? { title: filename, description: "" } : {}),
-    });
+
+  await sendAgentMedia({
+    agent,
+    toUser: userId,
+    mediaId,
+    mediaType,
+    ...(mediaType === "video" ? { title: filename, description: "" } : {}),
+  });
 }

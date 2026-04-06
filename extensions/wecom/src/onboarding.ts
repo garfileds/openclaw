@@ -1,19 +1,20 @@
 /**
- * 企业微信 setupWizard — 声明式 CLI setup wizard 配置。
+ * WeCom setupWizard — declarative CLI setup wizard configuration.
  *
- * 框架通过 plugin.setupWizard 字段识别并驱动 channel 的引导配置流程。
+ * The framework identifies and drives the channel's guided configuration flow
+ * via the plugin.setupWizard field.
  */
 
+import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import type { ChannelSetupWizard, ChannelSetupDmPolicy } from "openclaw/plugin-sdk/setup";
 import type { ChannelSetupAdapter } from "openclaw/plugin-sdk/setup";
-import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
-import { addWildcardAllowFrom } from "./openclaw-compat.js";
-import type { WeComConfig } from "./utils.js";
 import { resolveWeComAccountMulti, setWeComAccountMulti } from "./accounts.js";
 import { CHANNEL_ID } from "./const.js";
+import { addWildcardAllowFrom } from "./openclaw-compat.js";
+import type { WeComConfig } from "./utils.js";
 
 // ============================================================================
-// ChannelSetupAdapter — 框架用于应用配置输入的适配器
+// ChannelSetupAdapter — adapter used by the framework to apply config input
 // ============================================================================
 
 export const wecomSetupAdapter: ChannelSetupAdapter = {
@@ -27,7 +28,7 @@ export const wecomSetupAdapter: ChannelSetupAdapter = {
       patch.secret = String(input.privateKey).trim();
     }
 
-    // 如果是首次配置，默认启用
+    // Enable by default on first-time configuration
     const account = resolveWeComAccountMulti({ cfg });
     if (!account.botId && !account.secret) {
       patch.enabled = true;
@@ -38,11 +39,11 @@ export const wecomSetupAdapter: ChannelSetupAdapter = {
 };
 
 // ============================================================================
-// DM Policy 配置
+// DM Policy configuration
 // ============================================================================
 
 /**
- * 设置企业微信 dmPolicy
+ * Set WeCom dmPolicy
  */
 function setWeComDmPolicy(
   cfg: OpenClawConfig,
@@ -93,7 +94,7 @@ const dmPolicy: ChannelSetupDmPolicy = {
 };
 
 // ============================================================================
-// ChannelSetupWizard — 声明式 setup wizard 配置
+// ChannelSetupWizard — declarative setup wizard configuration
 // ============================================================================
 
 export const wecomSetupWizard: ChannelSetupWizard = {
@@ -128,7 +129,7 @@ export const wecomSetupWizard: ChannelSetupWizard = {
     },
   },
 
-  // ── 凭据输入 ──────────────────────────────────────────────────────────
+  // ── Credentials input ──────────────────────────────────────────────────
   credentials: [
     {
       inputKey: "token",
@@ -172,9 +173,9 @@ export const wecomSetupWizard: ChannelSetupWizard = {
     },
   ],
 
-  // ── 完成后的最终处理 ──────────────────────────────────────────────────
+  // ── Post-completion finalization ──────────────────────────────────────
   finalize: async ({ cfg }) => {
-    // 确保配置完成后 channel 处于启用状态
+    // Ensure the channel is enabled after configuration is complete
     const account = resolveWeComAccountMulti({ cfg });
     if (account.botId?.trim() && account.secret?.trim() && !account.enabled) {
       return { cfg: setWeComAccountMulti(cfg, { enabled: true }) };
@@ -182,13 +183,10 @@ export const wecomSetupWizard: ChannelSetupWizard = {
     return undefined;
   },
 
-  // ── 完成提示 ──────────────────────────────────────────────────────────
+  // ── Completion note ──────────────────────────────────────────────────
   completionNote: {
     title: "企业微信配置完成",
-    lines: [
-      "企业微信机器人已配置完成。",
-      "运行 `openclaw start` 启动服务。",
-    ],
+    lines: ["企业微信机器人已配置完成。", "运行 `openclaw start` 启动服务。"],
     shouldShow: ({ cfg }) => {
       const account = resolveWeComAccountMulti({ cfg });
       return Boolean(account.botId?.trim() && account.secret?.trim());

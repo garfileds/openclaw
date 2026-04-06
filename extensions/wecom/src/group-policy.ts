@@ -1,7 +1,7 @@
 /**
- * 企业微信群组访问控制模块
+ * WeCom group access control module
  *
- * 负责群组策略检查（groupPolicy、群组白名单、群内发送者白名单）
+ * Handles group policy checks (groupPolicy, group allowlist, per-group sender allowlist).
  */
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
@@ -10,23 +10,23 @@ import { CHANNEL_ID } from "./const.js";
 import type { ResolvedWeComAccount, WeComConfig, WeComGroupConfig } from "./utils.js";
 
 // ============================================================================
-// 检查结果类型
+// Check result types
 // ============================================================================
 
 /**
- * 群组策略检查结果
+ * Group policy check result
  */
 export interface GroupPolicyCheckResult {
-  /** 是否允许继续处理消息 */
+  /** Whether the message is allowed to proceed */
   allowed: boolean;
 }
 
 // ============================================================================
-// 内部辅助函数
+// Internal helper functions
 // ============================================================================
 
 /**
- * 解析企业微信群组配置
+ * Resolve WeCom group configuration
  */
 function resolveWeComGroupConfig(params: {
   cfg?: WeComConfig;
@@ -53,7 +53,7 @@ function resolveWeComGroupConfig(params: {
 }
 
 /**
- * 检查群组是否在允许列表中
+ * Check whether the group is in the allow list
  */
 function isWeComGroupAllowed(params: {
   groupPolicy: "open" | "allowlist" | "disabled";
@@ -67,21 +67,24 @@ function isWeComGroupAllowed(params: {
   if (groupPolicy === "open") {
     return true;
   }
-  // allowlist 模式：检查群组是否在允许列表中
+  // Allowlist mode: check if the group is in the allow list
   const normalizedAllowFrom = params.allowFrom.map((entry) =>
-    String(entry).replace(new RegExp(`^${CHANNEL_ID}:`, "i"), "").trim()
+    String(entry)
+      .replace(new RegExp(`^${CHANNEL_ID}:`, "i"), "")
+      .trim(),
   );
   if (normalizedAllowFrom.includes("*")) {
     return true;
   }
   const normalizedGroupId = params.groupId.trim();
   return normalizedAllowFrom.some(
-    (entry) => entry === normalizedGroupId || entry.toLowerCase() === normalizedGroupId.toLowerCase()
+    (entry) =>
+      entry === normalizedGroupId || entry.toLowerCase() === normalizedGroupId.toLowerCase(),
   );
 }
 
 /**
- * 检查群组内发送者是否在允许列表中
+ * Check whether the sender within a group is in the allow list
  */
 function isGroupSenderAllowed(params: {
   senderId: string;
@@ -112,12 +115,12 @@ function isGroupSenderAllowed(params: {
 }
 
 // ============================================================================
-// 公开 API
+// Public API
 // ============================================================================
 
 /**
- * 检查群组策略访问控制
- * @returns 检查结果，包含是否允许继续处理
+ * Check group policy access control.
+ * @returns Check result indicating whether processing should continue
  */
 export function checkGroupPolicy(params: {
   chatId: string;
@@ -127,11 +130,11 @@ export function checkGroupPolicy(params: {
   runtime: RuntimeEnv;
 }): GroupPolicyCheckResult {
   const { chatId, senderId, account, runtime } = params;
-  // 使用 account.config（已经过多账号合并），而非顶层 config.channels.wecom
-  // 避免多账户模式下 groupAllowFrom / groups 等字段取不到账号级配置
+  // Use account.config (already merged for multi-account), not top-level config.channels.wecom
+  // Prevents missing account-level groupAllowFrom / groups in multi-account mode
   const wecomConfig = account.config;
 
-  const groupPolicy = wecomConfig.groupPolicy ?? "open"
+  const groupPolicy = wecomConfig.groupPolicy ?? "open";
 
   const groupAllowFrom = wecomConfig.groupAllowFrom ?? [];
   const groupAllowed = isWeComGroupAllowed({
@@ -141,9 +144,7 @@ export function checkGroupPolicy(params: {
   });
 
   if (!groupAllowed) {
-    runtime.log?.(
-      `[WeCom] Group ${chatId} not allowed (groupPolicy=${groupPolicy})`,
-    );
+    runtime.log?.(`[WeCom] Group ${chatId} not allowed (groupPolicy=${groupPolicy})`);
     return { allowed: false };
   }
 
@@ -154,9 +155,7 @@ export function checkGroupPolicy(params: {
   });
 
   if (!senderAllowed) {
-    runtime.log?.(
-      `[WeCom] Sender ${senderId} not in group ${chatId} sender allowlist`,
-    );
+    runtime.log?.(`[WeCom] Sender ${senderId} not in group ${chatId} sender allowlist`);
     return { allowed: false };
   }
 
@@ -164,7 +163,7 @@ export function checkGroupPolicy(params: {
 }
 
 /**
- * 检查发送者是否在允许列表中（通用）
+ * Check whether the sender is in the allow list (general purpose)
  */
 export function isSenderAllowed(senderId: string, allowFrom: string[]): boolean {
   if (allowFrom.includes("*")) {

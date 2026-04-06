@@ -30,8 +30,8 @@ import { startWebhookGateway, stopWebhookGateway } from "./webhook/index.js";
 import type { ResolvedWebhookAccount, WebhookGatewayContext } from "./webhook/index.js";
 
 /**
- * 使用 SDK 的 sendMessage 主动发送企业微信消息
- * 优先 Bot WebSocket，不可用时自动回退到 Agent HTTP API
+ * Send a WeCom message proactively using the SDK's sendMessage.
+ * Prefers Bot WebSocket; automatically falls back to Agent HTTP API when unavailable.
  */
 async function sendWeComMessage({
   to,
@@ -46,11 +46,11 @@ async function sendWeComMessage({
 }): Promise<{ channel: string; messageId: string; chatId: string }> {
   const resolvedAccountId = accountId ?? DEFAULT_ACCOUNT_ID;
 
-  // 从 to 中提取目标（格式是 "${CHANNEL_ID}:xxx" 或直接是目标字符串）
+  // Extract target from `to` (format is "${CHANNEL_ID}:xxx" or a plain target string)
   const channelPrefix = new RegExp(`^${CHANNEL_ID}:`, "i");
   const chatId = to.replace(channelPrefix, "");
 
-  // ── 尝试 Bot WebSocket ──
+  // ── Try Bot WebSocket ──
   const wsClient = getWeComWebSocket(resolvedAccountId);
   if (wsClient?.isConnected) {
     const result = await wsClient.sendMessage(chatId, {
@@ -61,7 +61,7 @@ async function sendWeComMessage({
     return { channel: CHANNEL_ID, messageId, chatId };
   }
 
-  // ── 回退到 Agent HTTP API ──
+  // ── Fall back to Agent HTTP API ──
   if (!cfg) {
     throw new Error(
       `WSClient not connected for account ${resolvedAccountId} and no config available for Agent fallback`,
@@ -100,7 +100,7 @@ async function sendWeComMessage({
   };
 }
 
-// 企业微信频道元数据
+// WeCom channel metadata
 const meta = {
   id: CHANNEL_ID,
   label: "WeCom",
@@ -142,19 +142,19 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
   },
   reload: { configPrefixes: [`channels.${CHANNEL_ID}`] },
   config: {
-    // 多账号：列出所有账户 ID
+    // Multi-account: list all account IDs
     listAccountIds: (cfg) => listWeComAccountIds(cfg),
 
-    // 多账号：按 accountId 解析账户配置
+    // Multi-account: resolve account config by accountId
     resolveAccount: (cfg, accountId) => resolveWeComAccountMulti({ cfg, accountId }),
 
-    // 多账号：获取默认账户 ID
+    // Multi-account: get default account ID
     defaultAccountId: (cfg) => resolveDefaultWeComAccountId(cfg),
 
-    // 多账号：设置账户启用状态
+    // Multi-account: set account enabled state
     setAccountEnabled: ({ cfg, accountId, enabled }) => {
       if (!hasMultiAccounts(cfg)) {
-        // 单账号模式：设置顶层 enabled
+        // Single-account mode: set top-level enabled
         const wecomConfig = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComConfig;
         return {
           ...cfg,
@@ -167,7 +167,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
           },
         };
       }
-      // 多账号模式：设置 accounts[accountId].enabled
+      // Multi-account mode: set accounts[accountId].enabled
       const wecomConfig = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComMultiAccountConfig;
       return {
         ...cfg,
@@ -187,10 +187,10 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
       };
     },
 
-    // 多账号：删除账户
+    // Multi-account: delete account
     deleteAccount: ({ cfg, accountId }) => {
       if (!hasMultiAccounts(cfg)) {
-        // 单账号模式：删除整个 wecom 配置
+        // Single-account mode: delete the entire wecom config
         const next = { ...cfg } as OpenClawConfig;
         const nextChannels = { ...cfg.channels };
         delete (nextChannels as Record<string, unknown>)[CHANNEL_ID];
@@ -202,7 +202,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         return next;
       }
 
-      // 删除指定账号
+      // Delete the specified account
       const wecomConfig = cfg.channels?.[CHANNEL_ID] as WeComMultiAccountConfig | undefined;
       const accounts = { ...wecomConfig?.accounts };
       delete accounts[accountId];
@@ -219,13 +219,13 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
       };
     },
 
-    // 检查是否已配置（Bot / Agent / botWebhook 凭证之一即可）
+    // Check if configured (any of Bot / Agent / botWebhook credentials is sufficient)
     isConfigured: (account) =>
       Boolean(account.botId?.trim() && account.secret?.trim()) ||
       Boolean(account.agent?.configured) ||
       Boolean(account.token?.trim() && account.encodingAESKey?.trim()),
 
-    // 描述账户信息
+    // Describe account info
     describeAccount: (account) => ({
       accountId: account.accountId,
       name: account.name,
@@ -238,13 +238,13 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
       agentConfigured: Boolean(account.agent?.configured),
     }),
 
-    // 解析允许来源列表（多账号：按 accountId 解析）
+    // Resolve allow-from list (multi-account: resolved by accountId)
     resolveAllowFrom: ({ cfg, accountId }) => {
       const account = resolveWeComAccountMulti({ cfg, accountId });
       return (account.config.allowFrom ?? []).map((entry) => String(entry));
     },
 
-    // 格式化允许来源列表
+    // Format allow-from list
     formatAllowFrom: ({ allowFrom }) =>
       allowFrom.map((entry) => String(entry).trim()).filter(Boolean),
   },
@@ -268,14 +268,14 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
       const account = resolveWeComAccountMulti({ cfg, accountId });
       const warnings: string[] = [];
 
-      // 动态构造配置路径（区分单账号 / 多账号）
+      // Dynamically construct config path (distinguish single-account / multi-account)
       const isMulti = hasMultiAccounts(cfg);
       const basePath =
         isMulti && accountId
           ? `channels.${CHANNEL_ID}.accounts.${accountId}.`
           : `channels.${CHANNEL_ID}.`;
 
-      // DM 策略警告
+      // DM policy warning
       const dmPolicy = account.config.dmPolicy ?? "open";
       if (dmPolicy === "open") {
         const hasWildcard = (account.config.allowFrom ?? []).some(
@@ -288,7 +288,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         }
       }
 
-      // 群组策略警告
+      // Group policy warning
       const defaultGroupPolicy = cfg.channels?.defaults?.groupPolicy;
       const groupPolicy = account.config.groupPolicy ?? defaultGroupPolicy ?? "open";
       if (groupPolicy === "open") {
@@ -331,12 +331,12 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
       const channelPrefix = new RegExp(`^${CHANNEL_ID}:`, "i");
       const chatId = to.replace(channelPrefix, "");
 
-      // 如果没有 mediaUrl，fallback 为纯文本
+      // If no mediaUrl, fall back to plain text
       if (!mediaUrl) {
         return sendWeComMessage({ to, content: text || "", accountId: resolvedAccountId, cfg });
       }
 
-      // ── 尝试 Bot WebSocket ──
+      // ── Try Bot WebSocket ──
       const wsClient = getWeComWebSocket(resolvedAccountId);
       if (wsClient?.isConnected) {
         const result = await uploadAndSendMedia({
@@ -384,7 +384,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         };
       }
 
-      // ── 回退到 Agent HTTP API ──
+      // ── Fall back to Agent HTTP API ──
       if (!cfg) {
         throw new Error(
           `WSClient not connected for account ${resolvedAccountId} and no config available for Agent fallback`,
@@ -399,7 +399,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         );
       }
 
-      // Agent 模式：文本 fallback（Agent HTTP API 不支持直接发 mediaUrl，需先上传）
+      // Agent mode: text fallback (Agent HTTP API does not support sending mediaUrl directly; upload first)
       const target = resolveWecomTarget(chatId);
       if (!target) {
         throw new Error(`Cannot resolve outbound target from "${to}"`);
@@ -409,7 +409,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         `[wecom-outbound] Bot WS unavailable, sending media via Agent HTTP API to ${JSON.stringify(target)}`,
       );
 
-      // 尝试下载并上传媒体到企微
+      // Try downloading and uploading media to WeCom
       try {
         const mediaResponse = await fetch(mediaUrl);
         if (mediaResponse.ok) {
@@ -446,7 +446,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         console.warn(`[wecom-outbound] Agent media upload failed, falling back to text:`, err);
       }
 
-      // 媒体上传失败，降级为文本 + URL
+      // Media upload failed, downgrade to text + URL
       const fallbackContent = text ? `${text}\n📎 ${mediaUrl}` : `📎 ${mediaUrl}`;
       await sendAgentText({
         agent,
@@ -515,17 +515,17 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
   },
   gateway: {
     startAccount: async (ctx) => {
-      // 多账号：按 accountId 解析账号配置
+      // Multi-account: resolve account config by accountId
       const account = resolveWeComAccountMulti({ cfg: ctx.cfg, accountId: ctx.accountId });
 
-      // 读取连接模式（默认 websocket）
+      // Read connection mode (default: websocket)
       const connectionMode = account.config.connectionMode ?? "websocket";
 
       ctx.log?.info(
         `starting wecom[${ctx.accountId}] (name: ${account.name}, mode: ${connectionMode})`,
       );
 
-      // ── Agent target 注册 ──────────────────────────────────────────
+      // ── Agent target registration ──────────────────────────────────
       const agent = account.agent;
       if (agent?.configured) {
         const isMulti = hasMultiAccounts(ctx.cfg);
@@ -535,7 +535,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
           ? [
               `${WEBHOOK_PATHS.AGENT_PLUGIN}/${ctx.accountId}`,
               `${WEBHOOK_PATHS.AGENT}/${ctx.accountId}`,
-              // 默认账号额外注册 /default 别名路径
+              // Default account also registers /default alias paths
               ...(isDefault && ctx.accountId !== DEFAULT_ACCOUNT_ID
                 ? [
                     `${WEBHOOK_PATHS.AGENT_PLUGIN}/${DEFAULT_ACCOUNT_ID}`,
@@ -546,7 +546,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
               WEBHOOK_PATHS.AGENT,
             ]
           : [
-              // 单账号模式：同时注册 /default 路径以支持显式指定
+              // Single-account mode: also register /default paths for explicit specification
               WEBHOOK_PATHS.AGENT_PLUGIN,
               WEBHOOK_PATHS.AGENT,
               `${WEBHOOK_PATHS.AGENT_PLUGIN}/${DEFAULT_ACCOUNT_ID}`,
@@ -566,7 +566,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         }
         ctx.log?.info(`[${ctx.accountId}] wecom agent webhook registered at ${paths.join(", ")}`);
 
-        // 账号生命周期结束时清理
+        // Clean up when account lifecycle ends
         ctx.abortSignal.addEventListener(
           "abort",
           () => {
@@ -576,7 +576,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         );
       }
 
-      // ── Bot WebSocket 监听（需要 botId + secret）──────────────────
+      // ── Bot WebSocket listener (requires botId + secret) ──────────
       const hasBotCredentials = Boolean(account.botId?.trim() && account.secret?.trim());
       if (hasBotCredentials) {
         return monitorWeComProvider({
@@ -584,11 +584,11 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
           config: ctx.cfg,
           runtime: ctx.runtime,
           abortSignal: ctx.abortSignal,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- SDK 类型签名在不同版本间存在差异
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- SDK type signatures vary across versions
           setStatus: ctx.setStatus as any,
         });
       } else if (connectionMode === "webhook") {
-        // ── Webhook 模式 ──────────────────────────────────────────────
+        // ── Webhook mode ──────────────────────────────────────────────
         const webhookAccount: ResolvedWebhookAccount = {
           ...account,
           connectionMode: "webhook",
@@ -610,7 +610,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
 
         startWebhookGateway(gatewayCtx);
 
-        // 等待 abortSignal 停止后清理
+        // Wait for abortSignal then clean up
         await new Promise<void>((resolve) => {
           if (ctx.abortSignal.aborted) {
             stopWebhookGateway(gatewayCtx);
@@ -629,7 +629,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
         return;
       }
 
-      // Agent-only：无 Bot，等待 abort 信号
+      // Agent-only: no Bot, wait for abort signal
       return new Promise<void>((resolve) => {
         ctx.abortSignal.addEventListener("abort", () => resolve(), { once: true });
       });
@@ -642,7 +642,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
       let changed = false;
 
       if (!isMulti) {
-        // 单账号模式：删除顶层 botId/secret
+        // Single-account mode: delete top-level botId/secret
         const wecomConfig = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComConfig;
         const nextWecom = { ...wecomConfig };
 
@@ -667,7 +667,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
           }
         }
       } else {
-        // 多账号模式：删除指定账号的 botId/secret
+        // Multi-account mode: delete botId/secret for the specified account
         const wecomConfig = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComMultiAccountConfig;
         const accountCfg = wecomConfig.accounts?.[resolvedAccountId];
 

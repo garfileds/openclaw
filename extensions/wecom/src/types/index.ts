@@ -1,34 +1,32 @@
 /**
- * WeCom 类型统一导出
+ * WeCom types unified export
  */
 
-// 常量
+// Constants
 export * from "./constants.js";
 
-// 配置类型（仅导出被使用的子模块类型）
+// Configuration types (only export used sub-module types)
 export type {
-    WecomMediaConfig,
-    WecomNetworkConfig,
-    WecomBotConfig,
-    WecomAgentConfig,
+  WecomMediaConfig,
+  WecomNetworkConfig,
+  WecomBotConfig,
+  WecomAgentConfig,
 } from "./config.js";
 
-// 账号类型
-export type {
-    ResolvedAgentAccount,
-} from "./account.js";
+// Account types
+export type { ResolvedAgentAccount } from "./account.js";
 
-// 消息类型
+// Message types
 export type {
-    WecomBotInboundBase,
-    WecomBotInboundText,
-    WecomBotInboundVoice,
-    WecomBotInboundVideo,
-    WecomBotInboundStreamRefresh,
-    WecomBotInboundEvent,
-    WecomBotInboundMessage,
-    WecomAgentInboundMessage,
-    WecomInboundQuote,
-    WecomTemplateCard,
-    WecomOutboundMessage,
+  WecomBotInboundBase,
+  WecomBotInboundText,
+  WecomBotInboundVoice,
+  WecomBotInboundVideo,
+  WecomBotInboundStreamRefresh,
+  WecomBotInboundEvent,
+  WecomBotInboundMessage,
+  WecomAgentInboundMessage,
+  WecomInboundQuote,
+  WecomTemplateCard,
+  WecomOutboundMessage,
 } from "./message.js";

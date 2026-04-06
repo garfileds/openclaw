@@ -1,18 +1,13 @@
 /**
- * 企业微信出站媒体上传工具模块
+ * WeCom outbound media upload utility module
  *
- * 负责：
- * - 从 mediaUrl 加载文件 buffer（远程 URL 或本地路径均支持）
- * - 检测 MIME 类型并映射为企微媒体类型
- * - 文件大小检查与降级策略
+ * Responsible for:
+ * - Loading file buffers from mediaUrl (supports both remote URLs and local paths)
+ * - Detecting MIME types and mapping them to WeCom media types
+ * - File size checking and downgrade strategies
  */
 
 import type { WeComMediaType, WSClient, WsFrameHeaders } from "@wecom/aibot-node-sdk";
-import {
-  loadOutboundMediaFromUrl,
-  detectMime,
-  type WebMediaResult,
-} from "./openclaw-compat.js";
 import {
   IMAGE_MAX_BYTES,
   VIDEO_MAX_BYTES,
@@ -20,90 +15,91 @@ import {
   FILE_MAX_BYTES,
   ABSOLUTE_MAX_BYTES,
 } from "./const.js";
+import { loadOutboundMediaFromUrl, detectMime, type WebMediaResult } from "./openclaw-compat.js";
 
 // ============================================================================
-// 类型定义
+// Type definitions
 // ============================================================================
 
-/** 媒体文件解析结果 */
+/** Resolved media file result */
 export interface ResolvedMedia {
-  /** 文件数据 */
+  /** File data */
   buffer: Buffer;
-  /** 检测到的 MIME 类型 */
+  /** Detected MIME type */
   contentType: string;
-  /** 文件名（从 URL 提取或默认生成） */
+  /** Filename (extracted from URL or generated as default) */
   fileName: string;
 }
 
-/** 文件大小检查结果 */
+/** File size check result */
 export interface FileSizeCheckResult {
-  /** 最终确定的企微媒体类型（可能被降级） */
+  /** Final WeCom media type (may have been downgraded) */
   finalType: WeComMediaType;
-  /** 是否需要拒绝（超过绝对限制） */
+  /** Whether the file should be rejected (exceeds absolute limit) */
   shouldReject: boolean;
-  /** 拒绝原因（仅 shouldReject=true 时有值） */
+  /** Rejection reason (only present when shouldReject=true) */
   rejectReason?: string;
-  /** 是否发生了降级 */
+  /** Whether a downgrade occurred */
   downgraded: boolean;
-  /** 降级说明（仅 downgraded=true 时有值） */
+  /** Downgrade explanation (only present when downgraded=true) */
   downgradeNote?: string;
 }
 
 // ============================================================================
-// MIME → 企微媒体类型映射
+// MIME → WeCom media type mapping
 // ============================================================================
 
 /**
- * 根据 MIME 类型检测企微媒体类型
+ * Detect the WeCom media type from a MIME type
  *
- * @param mimeType - MIME 类型字符串
- * @returns 企微媒体类型
+ * @param mimeType - MIME type string
+ * @returns WeCom media type
  */
 export function detectWeComMediaType(mimeType: string): WeComMediaType {
   const mime = mimeType.toLowerCase();
 
-  // 图片类型
+  // Image types
   if (mime.startsWith("image/")) {
     return "image";
   }
 
-  // 视频类型
+  // Video types
   if (mime.startsWith("video/")) {
     return "video";
   }
 
-  // 语音类型
+  // Voice/audio types
   if (
     mime.startsWith("audio/") ||
-    mime === "application/ogg" // OGG 音频容器
+    mime === "application/ogg" // OGG audio container
   ) {
     return "voice";
   }
 
-  // 其他类型默认为文件
+  // Default to file for all other types
   return "file";
 }
 
 // ============================================================================
-// 媒体文件加载
+// Media file loading
 // ============================================================================
 
 /**
- * 从 mediaUrl 加载媒体文件
+ * Load a media file from a mediaUrl
  *
- * 支持远程 URL（http/https）和本地路径（file:// 或绝对路径），
- * 利用 openclaw plugin-sdk 的 loadOutboundMediaFromUrl 统一处理。
+ * Supports remote URLs (http/https) and local paths (file:// or absolute paths),
+ * using the openclaw plugin-sdk's loadOutboundMediaFromUrl for unified handling.
  *
- * @param mediaUrl - 媒体文件的 URL 或本地路径
- * @param mediaLocalRoots - 允许读取本地文件的安全白名单目录
- * @returns 解析后的媒体文件信息
+ * @param mediaUrl - URL or local path of the media file
+ * @param mediaLocalRoots - Allowed local directory whitelist for reading local files
+ * @returns Resolved media file information
  */
 export async function resolveMediaFile(
   mediaUrl: string,
   mediaLocalRoots?: readonly string[],
 ): Promise<ResolvedMedia> {
-  // 使用兼容层加载媒体文件（优先 SDK，不可用时 fallback）
-  // 传入足够大的 maxBytes，由我们自己在后续步骤做大小检查
+  // Use the compatibility layer to load the media file (prefer SDK, fallback if unavailable)
+  // Pass a large enough maxBytes; we do our own size check in a later step
   const result: WebMediaResult = await loadOutboundMediaFromUrl(mediaUrl, {
     maxBytes: ABSOLUTE_MAX_BYTES,
     mediaLocalRoots,
@@ -113,14 +109,11 @@ export async function resolveMediaFile(
     throw new Error(`Failed to load media from ${mediaUrl}: empty buffer`);
   }
 
-  // 检测真实 MIME 类型
+  // Detect the actual MIME type
   let contentType = result.contentType || "application/octet-stream";
 
-  // 如果没有返回准确的 contentType，尝试通过 buffer 魔术字节检测
-  if (
-    contentType === "application/octet-stream" ||
-    contentType === "text/plain"
-  ) {
+  // If no accurate contentType was returned, try detecting via buffer magic bytes
+  if (contentType === "application/octet-stream" || contentType === "text/plain") {
     const detected = await detectMime(result.buffer);
     if (detected) {
       contentType = detected;
@@ -166,7 +159,7 @@ export function applyFileSizeLimits(
 ): FileSizeCheckResult {
   const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
 
-  // 先检查绝对上限（20MB）
+  // First check the absolute limit (20MB)
   if (fileSize > ABSOLUTE_MAX_BYTES) {
     return {
       finalType: detectedType,
@@ -201,7 +194,7 @@ export function applyFileSizeLimits(
       break;
 
     case "voice":
-      // 企微语音消息仅支持 AMR 格式，非 AMR 一律降级为文件
+      // WeCom voice messages only support AMR format; non-AMR is always downgraded to file
       if (contentType && !VOICE_SUPPORTED_MIMES.has(contentType.toLowerCase())) {
         return {
           finalType: "file",
@@ -221,7 +214,7 @@ export function applyFileSizeLimits(
       break;
 
     case "file":
-      // file 类型在绝对上限内即可
+      // file type is fine as long as it's within the absolute limit
       break;
   }
 
@@ -234,11 +227,11 @@ export function applyFileSizeLimits(
 }
 
 // ============================================================================
-// 辅助函数
+// Helper functions
 // ============================================================================
 
 /**
- * 从 URL/路径中提取文件名
+ * Extract a filename from a URL/path
  */
 function extractFileName(
   mediaUrl: string,
@@ -267,13 +260,13 @@ function extractFileName(
     }
   }
 
-  // 使用 MIME 类型生成默认文件名
+  // Generate a default filename from the MIME type
   const ext = mimeToExtension(contentType || "application/octet-stream");
   return `media_${Date.now()}${ext}`;
 }
 
 /**
- * MIME 类型转文件扩展名
+ * Map MIME type to file extension
  */
 function mimeToExtension(mime: string): string {
   const map: Record<string, string> = {
@@ -295,62 +288,61 @@ function mimeToExtension(mime: string): string {
     "application/pdf": ".pdf",
     "application/zip": ".zip",
     "application/msword": ".doc",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-      ".docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "application/vnd.ms-excel": ".xls",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
-      ".xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
     "text/plain": ".txt",
   };
   return map[mime] || ".bin";
 }
 
 // ============================================================================
-// 公共媒体上传+发送流程
+// Public media upload + send flow
 // ============================================================================
 
-/** uploadAndSendMedia 的参数 */
+/** Parameters for uploadAndSendMedia */
 export interface UploadAndSendMediaOptions {
-  /** WSClient 实例 */
+  /** WSClient instance */
   wsClient: WSClient;
-  /** 媒体文件的 URL 或本地路径 */
+  /** URL or local path of the media file */
   mediaUrl: string;
-  /** 目标会话 ID（用于 aibot_send_msg 主动发送） */
+  /** Target chat ID (used for aibot_send_msg proactive sending) */
   chatId: string;
-  /** 允许读取本地文件的安全白名单目录 */
+  /** Allowed local directory whitelist for reading local files */
   mediaLocalRoots?: readonly string[];
-  /** 日志函数 */
+  /** Logging function */
   log?: (...args: any[]) => void;
-  /** 错误日志函数 */
+  /** Error logging function */
   errorLog?: (...args: any[]) => void;
 }
 
-/** uploadAndSendMedia 的返回结果 */
+/** Return result of uploadAndSendMedia */
 export interface UploadAndSendMediaResult {
-  /** 是否发送成功 */
+  /** Whether sending succeeded */
   ok: boolean;
-  /** 发送后返回的 messageId */
+  /** messageId returned after sending */
   messageId?: string;
-  /** 最终的企微媒体类型 */
+  /** Final WeCom media type */
   finalType?: WeComMediaType;
-  /** 是否被拒绝（文件过大） */
+  /** Whether the file was rejected (too large) */
   rejected?: boolean;
-  /** 拒绝原因 */
+  /** Rejection reason */
   rejectReason?: string;
-  /** 是否发生了降级 */
+  /** Whether a downgrade occurred */
   downgraded?: boolean;
-  /** 降级说明 */
+  /** Downgrade explanation */
   downgradeNote?: string;
-  /** 错误信息 */
+  /** Error message */
   error?: string;
 }
 
 /**
- * 公共媒体上传+发送流程
+ * Public media upload + send flow
  *
- * 统一处理：resolveMediaFile → detectType → sizeCheck → uploadMedia → sendMediaMessage
- * 媒体消息统一走 aibot_send_msg 主动发送，避免多文件场景下 reqId 只能用一次的问题。
- * channel.ts 的 sendMedia 和 monitor.ts 的 deliver 回调都使用此函数。
+ * Unified pipeline: resolveMediaFile → detectType → sizeCheck → uploadMedia → sendMediaMessage
+ * Media messages are sent uniformly via aibot_send_msg (proactive send) to avoid the
+ * reqId single-use limitation in multi-file scenarios.
+ * Used by both channel.ts's sendMedia and monitor.ts's deliver callback.
  */
 export async function uploadAndSendMedia(
   options: UploadAndSendMediaOptions,
@@ -358,14 +350,14 @@ export async function uploadAndSendMedia(
   const { wsClient, mediaUrl, chatId, mediaLocalRoots, log, errorLog } = options;
 
   try {
-    // 1. 加载媒体文件
+    // 1. Load the media file
     log?.(`[wecom] Uploading media: url=${mediaUrl}`);
     const media = await resolveMediaFile(mediaUrl, mediaLocalRoots);
 
-    // 2. 检测企微媒体类型
+    // 2. Detect WeCom media type
     const detectedType = detectWeComMediaType(media.contentType);
 
-    // 3. 文件大小检查与降级策略
+    // 3. File size check and downgrade strategy
     const sizeCheck = applyFileSizeLimits(media.buffer.length, detectedType, media.contentType);
 
     if (sizeCheck.shouldReject) {
@@ -380,14 +372,14 @@ export async function uploadAndSendMedia(
 
     const finalType = sizeCheck.finalType;
 
-    // 4. 分片上传获取 media_id
+    // 4. Chunked upload to obtain media_id
     const uploadResult = await wsClient.uploadMedia(media.buffer, {
       type: finalType,
       filename: media.fileName,
     });
     log?.(`[wecom] Media uploaded: media_id=${uploadResult.media_id}, type=${finalType}`);
 
-    // 5. 统一通过 aibot_send_msg 主动发送媒体消息
+    // 5. Send the media message uniformly via aibot_send_msg (proactive send)
     const result = await wsClient.sendMediaMessage(chatId, finalType, uploadResult.media_id);
     const messageId = result?.headers?.req_id ?? `wecom-media-${Date.now()}`;
     log?.(`[wecom] Media sent via sendMediaMessage: chatId=${chatId}, type=${finalType}`);
@@ -410,32 +402,34 @@ export async function uploadAndSendMedia(
 }
 
 // ============================================================================
-// 被动回复媒体上传+发送流程
+// Passive reply media upload + send flow
 // ============================================================================
 
-/** uploadAndReplyMedia 的参数 */
+/** Parameters for uploadAndReplyMedia */
 export interface UploadAndReplyMediaOptions {
-  /** WSClient 实例 */
+  /** WSClient instance */
   wsClient: WSClient;
-  /** 媒体文件的 URL 或本地路径 */
+  /** URL or local path of the media file */
   mediaUrl: string;
-  /** 原始 WebSocket 帧（用于 aibot_respond_msg 被动回复，携带 req_id） */
+  /** Original WebSocket frame (used for aibot_respond_msg passive reply, carries req_id) */
   frame: WsFrameHeaders;
-  /** 允许读取本地文件的安全白名单目录 */
+  /** Allowed local directory whitelist for reading local files */
   mediaLocalRoots?: readonly string[];
-  /** 日志函数 */
+  /** Logging function */
   log?: (...args: any[]) => void;
-  /** 错误日志函数 */
+  /** Error logging function */
   errorLog?: (...args: any[]) => void;
 }
 
 /**
- * 被动回复媒体上传+发送流程
+ * Passive reply media upload + send flow
  *
- * 统一处理：resolveMediaFile → detectType → sizeCheck → uploadMedia → replyMedia
- * 通过 aibot_respond_msg 被动回复通道发送媒体消息，可以覆盖之前的 THINKING_MESSAGE。
+ * Unified pipeline: resolveMediaFile → detectType → sizeCheck → uploadMedia → replyMedia
+ * Sends media messages via the aibot_respond_msg passive reply channel, which can
+ * overwrite a previous THINKING_MESSAGE.
  *
- * 适用场景：回包只有媒体没有文本时，第一个媒体文件用此方法发送以清理 thinking 状态。
+ * Use case: when the response contains only media and no text, the first media file
+ * is sent via this method to clear the thinking state.
  */
 export async function uploadAndReplyMedia(
   options: UploadAndReplyMediaOptions,
@@ -443,14 +437,14 @@ export async function uploadAndReplyMedia(
   const { wsClient, mediaUrl, frame, mediaLocalRoots, log, errorLog } = options;
 
   try {
-    // 1. 加载媒体文件
+    // 1. Load the media file
     log?.(`[wecom] Uploading media (reply mode): url=${mediaUrl}`);
     const media = await resolveMediaFile(mediaUrl, mediaLocalRoots);
 
-    // 2. 检测企微媒体类型
+    // 2. Detect WeCom media type
     const detectedType = detectWeComMediaType(media.contentType);
 
-    // 3. 文件大小检查与降级策略
+    // 3. File size check and downgrade strategy
     const sizeCheck = applyFileSizeLimits(media.buffer.length, detectedType, media.contentType);
 
     if (sizeCheck.shouldReject) {
@@ -465,14 +459,14 @@ export async function uploadAndReplyMedia(
 
     const finalType = sizeCheck.finalType;
 
-    // 4. 分片上传获取 media_id
+    // 4. Chunked upload to obtain media_id
     const uploadResult = await wsClient.uploadMedia(media.buffer, {
       type: finalType,
       filename: media.fileName,
     });
     log?.(`[wecom] Media uploaded: media_id=${uploadResult.media_id}, type=${finalType}`);
 
-    // 5. 通过 aibot_respond_msg 被动回复发送媒体消息（会覆盖 THINKING_MESSAGE）
+    // 5. Send media message via aibot_respond_msg passive reply (overwrites THINKING_MESSAGE)
     const result = await wsClient.replyMedia(frame, finalType, uploadResult.media_id);
     const messageId = result?.headers?.req_id ?? `wecom-reply-media-${Date.now()}`;
     log?.(`[wecom] Media sent via replyMedia (passive reply): type=${finalType}`);

@@ -1,34 +1,31 @@
 /**
- * WeCom 账号类型定义
+ * WeCom account type definitions
  */
 
-import type {
-    WecomAgentConfig,
-    WecomNetworkConfig,
-} from "./config.js";
+import type { WecomAgentConfig, WecomNetworkConfig } from "./config.js";
 
 /**
- * 解析后的 Agent 账号
+ * Resolved Agent account
  */
 export type ResolvedAgentAccount = {
-    /** 账号 ID */
-    accountId: string;
-    /** 是否启用 */
-    enabled: boolean;
-    /** 是否配置完整 */
-    configured: boolean;
-    /** 企业 ID */
-    corpId: string;
-    /** 应用 Secret */
-    corpSecret: string;
-    /** 应用 ID (数字，可选) */
-    agentId?: number;
-    /** 回调 Token */
-    token: string;
-    /** 回调加密密钥 */
-    encodingAESKey: string;
-    /** 原始配置 */
-    config: WecomAgentConfig;
-    /** 网络配置（来自 channels.wecom.network） */
-    network?: WecomNetworkConfig;
+  /** Account ID */
+  accountId: string;
+  /** Whether enabled */
+  enabled: boolean;
+  /** Whether fully configured */
+  configured: boolean;
+  /** Corp ID */
+  corpId: string;
+  /** App Secret */
+  corpSecret: string;
+  /** App ID (numeric, optional) */
+  agentId?: number;
+  /** Callback Token */
+  token: string;
+  /** Callback encryption key */
+  encodingAESKey: string;
+  /** Original configuration */
+  config: WecomAgentConfig;
+  /** Network configuration (from channels.wecom.network) */
+  network?: WecomNetworkConfig;
 };

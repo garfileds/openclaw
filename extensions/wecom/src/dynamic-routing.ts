@@ -1,6 +1,6 @@
 /**
- * 动态路由统一处理模块
- * 提供统一的路由注入接口。
+ * Unified dynamic routing handler module.
+ * Provides a unified route injection interface.
  */
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
@@ -8,7 +8,7 @@ import type { PluginRuntime } from "openclaw/plugin-sdk/core";
 import { shouldUseDynamicAgent, generateAgentId } from "./dynamic-agent.js";
 
 /**
- * 路由对象（从 core.channel.routing.resolveAgentRoute 返回）
+ * Route object (returned from core.channel.routing.resolveAgentRoute)
  */
 export interface AgentRoute {
   agentId: string;
@@ -19,63 +19,63 @@ export interface AgentRoute {
 }
 
 /**
- * 动态路由处理参数
+ * Dynamic routing handler parameters
  */
 export interface DynamicRoutingParams {
-  /** 原始路由对象 */
+  /** Original route object */
   route: AgentRoute;
-  /** 全局配置 */
+  /** Global configuration */
   config: OpenClawConfig;
-  /** 插件运行时 */
+  /** Plugin runtime */
   core: PluginRuntime;
-  /** 账号 ID */
+  /** Account ID */
   accountId: string;
-  /** 会话类型 */
+  /** Chat type */
   chatType: "group" | "dm";
-  /** 对话 ID（群聊为 chatId，私聊为 userId） */
+  /** Chat ID (groupId for group chats, userId for DMs) */
   chatId: string;
-  /** 发送者用户 ID */
+  /** Sender user ID */
   senderId: string;
-  /** 日志输出函数（可选） */
+  /** Log output function (optional) */
   log?: (msg: string) => void;
-  /** 错误日志输出函数（可选） */
+  /** Error log output function (optional) */
   error?: (msg: string) => void;
 }
 
 /**
- * 动态路由处理结果
+ * Dynamic routing handler result
  */
 export interface DynamicRoutingResult {
-  /** 是否使用动态 Agent */
+  /** Whether dynamic Agent is used */
   useDynamicAgent: boolean;
-  /** 最终的 agentId（可能被动态注入修改） */
+  /** Final agentId (may be modified by dynamic injection) */
   finalAgentId: string;
-  /** 最终的 sessionKey（可能被动态注入修改） */
+  /** Final sessionKey (may be modified by dynamic injection) */
   finalSessionKey: string;
-  /** 是否修改了路由（注入了动态 Agent） */
+  /** Whether the route was modified (dynamic Agent was injected) */
   routeModified: boolean;
 }
 
 /**
- * 统一处理动态路由注入逻辑
+ * Unified dynamic routing injection logic handler.
  *
- * 功能：
- * 1. 判断是否需要使用动态 Agent
- * 2. 根据 matchedBy 判断配置类型
- * 3. 返回最终的路由信息（不修改传入的 route 对象）
- * 4. 输出详细的调试日志
+ * Functionality:
+ * 1. Determine whether a dynamic Agent is needed
+ * 2. Determine config type based on matchedBy
+ * 3. Return the final routing info (does not mutate the input route object)
+ * 4. Output detailed debug logs
  *
- * @param params 动态路由处理参数
- * @returns 处理结果
+ * @param params Dynamic routing handler parameters
+ * @returns Processing result
  */
 export function processDynamicRouting(params: DynamicRoutingParams): DynamicRoutingResult {
   const { route, config, accountId, chatType, chatId, senderId, log } = params;
 
-  log?.(`[dynamic-routing] 🔍 调试 - matchedBy=${route.matchedBy}, agentId=${route.agentId}`);
+  log?.(`[dynamic-routing] 🔍 Debug - matchedBy=${route.matchedBy}, agentId=${route.agentId}`);
 
   if (route.matchedBy !== "default") {
     log?.(
-      `[dynamic-routing] ℹ️  检测到匹配的 bindings (matchedBy=${route.matchedBy})，跳过动态路由`,
+      `[dynamic-routing] ℹ️  Detected matching bindings (matchedBy=${route.matchedBy}), skipping dynamic routing`,
     );
     return {
       useDynamicAgent: false,
@@ -85,25 +85,25 @@ export function processDynamicRouting(params: DynamicRoutingParams): DynamicRout
     };
   }
 
-  // 判断是否使用动态 Agent
+  // Determine whether to use dynamic Agent
   const useDynamicAgent = shouldUseDynamicAgent({
     chatType,
     senderId,
     config,
   });
-  log?.(`[dynamic-routing] 是否使用动态路由: useDynamicAgent=${useDynamicAgent}`);
+  log?.(`[dynamic-routing] Whether to use dynamic routing: useDynamicAgent=${useDynamicAgent}`);
 
-  // 使用动态 Agent
+  // Use dynamic Agent
   if (useDynamicAgent) {
     log?.(
-      `[dynamic-routing] 原始路由信息: agentId=${route.agentId}, matchedBy=${route.matchedBy}, sessionKey=${route.sessionKey}`,
+      `[dynamic-routing] Original route info: agentId=${route.agentId}, matchedBy=${route.matchedBy}, sessionKey=${route.sessionKey}`,
     );
 
     const targetAgentId = generateAgentId(chatType, chatId, accountId);
     const targetSessionKey = `agent:${targetAgentId}:wecom:${accountId}:${chatType}:${chatId}`;
 
     log?.(
-      `[dynamic-routing] 🔄 路由注入: agentId=${targetAgentId}, sessionKey=${targetSessionKey}`,
+      `[dynamic-routing] 🔄 Route injection: agentId=${targetAgentId}, sessionKey=${targetSessionKey}`,
     );
 
     return {
@@ -114,8 +114,8 @@ export function processDynamicRouting(params: DynamicRoutingParams): DynamicRout
     };
   }
 
-  log?.("[dynamic-routing] 🔄不使用动态路由");
-  // 不使用动态 Agent，返回原始路由
+  log?.("[dynamic-routing] 🔄 Not using dynamic routing");
+  // Not using dynamic Agent, return original route
   return {
     useDynamicAgent: false,
     finalAgentId: route.agentId,

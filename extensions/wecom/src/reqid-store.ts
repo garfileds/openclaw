@@ -1,51 +1,51 @@
 // ============================================================================
-// 类型定义
+// Type definitions
 // ============================================================================
 
-/** 单条 reqId 记录 */
+/** Single reqId record */
 interface ReqIdEntry {
-  /** 请求 ID */
+  /** Request ID */
   reqId: string;
-  /** 记录时间戳（毫秒） */
+  /** Record timestamp (milliseconds) */
   ts: number;
 }
 
-/** Store 配置 */
+/** Store configuration */
 interface ReqIdStoreOptions {
-  /** TTL 毫秒数，超时的 reqId 视为过期（默认 7 天） */
+  /** TTL in milliseconds, expired reqIds are considered stale (default 7 days) */
   ttlMs?: number;
-  /** 内存最大条目数（默认 200） */
+  /** Maximum in-memory entries (default 200) */
   memoryMaxSize?: number;
 }
 
 // ============================================================================
-// 常量
+// Constants
 // ============================================================================
 
-const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
+const DEFAULT_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const DEFAULT_MEMORY_MAX_SIZE = 200;
 
 // ============================================================================
-// 公开接口
+// Public interface
 // ============================================================================
 
 export interface PersistentReqIdStore {
-  /** 设置 chatId 对应的 reqId（仅写入内存） */
+  /** Set the reqId for a chatId (writes to memory only) */
   set(chatId: string, reqId: string): void;
-  /** 获取 chatId 对应的 reqId（仅内存） */
+  /** Get the reqId for a chatId (memory only) */
   get(chatId: string): Promise<string | undefined>;
-  /** 同步获取 chatId 对应的 reqId（仅内存） */
+  /** Synchronously get the reqId for a chatId (memory only) */
   getSync(chatId: string): string | undefined;
-  /** 删除 chatId 对应的 reqId */
+  /** Delete the reqId for a chatId */
   delete(chatId: string): void;
-  /** 清空内存缓存 */
+  /** Clear the in-memory cache */
   clearMemory(): void;
-  /** 返回内存中的条目数 */
+  /** Return the number of entries in memory */
   memorySize(): number;
 }
 
 // ============================================================================
-// 核心实现
+// Core implementation
 // ============================================================================
 
 export function createPersistentReqIdStore(
@@ -55,19 +55,19 @@ export function createPersistentReqIdStore(
   const ttlMs = options?.ttlMs ?? DEFAULT_TTL_MS;
   const memoryMaxSize = options?.memoryMaxSize ?? DEFAULT_MEMORY_MAX_SIZE;
 
-  // 内存层：chatId → ReqIdEntry
+  // Memory layer: chatId → ReqIdEntry
   const memory = new Map<string, ReqIdEntry>();
 
-  // ========== 内部辅助函数 ==========
+  // ========== Internal helper functions ==========
 
-  /** 检查条目是否过期 */
+  /** Check if an entry is expired */
   function isExpired(entry: ReqIdEntry, now: number): boolean {
     return ttlMs > 0 && now - entry.ts >= ttlMs;
   }
 
   /**
-   * 内存容量控制：淘汰最旧的条目。
-   * 利用 Map 的插入顺序 + touch(先 delete 再 set) 实现类 LRU 效果。
+   * Memory capacity control: evict the oldest entries.
+   * Uses Map insertion order + touch (delete then set) for LRU-like behavior.
    */
   function pruneMemory(): void {
     if (memory.size <= memoryMaxSize) return;
@@ -78,11 +78,11 @@ export function createPersistentReqIdStore(
     }
   }
 
-  // ========== 公开 API ==========
+  // ========== Public API ==========
 
   function set(chatId: string, reqId: string): void {
     const entry: ReqIdEntry = { reqId, ts: Date.now() };
-    // touch：先删再设，保持 Map 插入顺序（类 LRU）
+    // touch: delete then set to maintain Map insertion order (LRU-like)
     memory.delete(chatId);
     memory.set(chatId, entry);
     pruneMemory();
@@ -91,13 +91,13 @@ export function createPersistentReqIdStore(
   async function get(chatId: string): Promise<string | undefined> {
     const now = Date.now();
 
-    // 仅查内存
+    // Check memory only
     const memEntry = memory.get(chatId);
     if (memEntry && !isExpired(memEntry, now)) {
       return memEntry.reqId;
     }
     if (memEntry) {
-      memory.delete(chatId); // 过期则删除
+      memory.delete(chatId); // Delete if expired
     }
 
     return undefined;

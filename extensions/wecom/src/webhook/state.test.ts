@@ -1,7 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
-
-import type { WebhookInboundMessage, WecomWebhookTarget } from "./types.js";
 import { StreamStore } from "./state.js";
+import type { WebhookInboundMessage, WecomWebhookTarget } from "./types.js";
 
 describe("wecom StreamStore queue", () => {
   test("does not merge into active batch; flushes queued batch after active finishes", async () => {
@@ -44,7 +43,7 @@ describe("wecom StreamStore queue", () => {
       });
 
       expect(r1.status).toBe("active_new");
-      // 初始批次不接收合并：第二条进入 queued
+      // The initial batch does not accept merges: the second message goes into queued
       expect(r2.status).toBe("queued_new");
       expect(r2.streamId).not.toBe(r1.streamId);
 

@@ -1,25 +1,26 @@
 /**
- * 企业微信消息发送模块
+ * WeCom message sending module
  *
- * 负责通过 WSClient 发送回复消息，包含超时保护
+ * Responsible for sending reply messages via WSClient, with timeout protection
  */
 
-import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { type WSClient, type WsFrame, generateReqId } from "@wecom/aibot-node-sdk";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { REPLY_SEND_TIMEOUT_MS } from "./const.js";
 import { withTimeout } from "./timeout.js";
 
 // ============================================================================
-// 流式过期错误（errcode 846608）
+// Stream expiration error (errcode 846608)
 // ============================================================================
 
-/** 流式回复超时错误码（>6分钟未更新，服务端拒绝继续流式更新） */
+/** Stream reply timeout error code (>6 minutes without update, server refuses to continue stream updates) */
 export const STREAM_EXPIRED_ERRCODE = 846608;
 
 /**
- * 流式回复过期错误
- * 当服务端返回 errcode=846608 时抛出，表示流式消息已超过6分钟无法更新，
- * 调用方需降级为主动发送（sendMessage）方式回复。
+ * Stream reply expiration error
+ * Thrown when the server returns errcode=846608, indicating the stream message has been
+ * inactive for over 6 minutes and can no longer be updated.
+ * Callers need to fall back to proactive sending (sendMessage).
  */
 export class StreamExpiredError extends Error {
   readonly errcode = STREAM_EXPIRED_ERRCODE;
@@ -44,9 +45,9 @@ export async function sendWeComReply(params: {
   frame: WsFrame;
   text?: string;
   runtime: RuntimeEnv;
-  /** 是否为流式回复的最终消息，默认为 true */
+  /** Whether this is the final message in a stream reply, defaults to true */
   finish?: boolean;
-  /** 指定 streamId，用于流式回复时保持相同的 streamId */
+  /** Specify streamId, used to maintain the same streamId during stream replies */
   streamId?: string;
 }): Promise<string> {
   const { wsClient, frame, text, runtime, finish = true, streamId: existingStreamId } = params;
@@ -75,7 +76,9 @@ export async function sendWeComReply(params: {
   if (body.msgtype === "event") {
     // 中间帧（thinking / 流式增量）直接跳过，仅在最终帧主动发一次文本。
     if (!finish) {
-      runtime.log?.(`[plugin -> server] skip non-final stream for event callback, streamId=${streamId}`);
+      runtime.log?.(
+        `[plugin -> server] skip non-final stream for event callback, streamId=${streamId}`,
+      );
       return streamId;
     }
 
@@ -96,8 +99,8 @@ export async function sendWeComReply(params: {
     return streamId;
   }
 
-  // 非事件消息，继续使用 replyStream（被动回复）
-  // 使用 SDK 的 replyStream 方法发送消息，带超时保护
+  // Non-event messages: continue using replyStream (passive reply)
+  // Use SDK's replyStream method to send messages, with timeout protection
   try {
     await withTimeout(
       wsClient.replyStream(frame, streamId, text, finish),
@@ -105,7 +108,7 @@ export async function sendWeComReply(params: {
       `Reply send timed out (streamId=${streamId})`,
     );
   } catch (err: any) {
-    // 服务端返回 846608：流式消息超过6分钟无法更新，需降级为主动发送
+    // Server returned 846608: stream message inactive for >6 minutes, need to fall back to proactive send
     const errMsg = err?.errmsg || err?.message || String(err);
     if (
       err?.errcode === STREAM_EXPIRED_ERRCODE ||
@@ -141,25 +144,25 @@ export async function sendWeComReplyNonBlocking(params: {
   runtime: RuntimeEnv;
   streamId: string;
   finish?: boolean;
-}): Promise<string | 'skipped'> {
+}): Promise<string | "skipped"> {
   const { wsClient, frame, text, runtime, streamId, finish = false } = params;
 
   if (!text) {
-    return 'skipped';
+    return "skipped";
   }
 
   if (!wsClient.isConnected) {
-    return 'skipped';
+    return "skipped";
   }
 
   try {
     const result = await wsClient.replyStreamNonBlocking(frame, streamId, text, finish);
-    if (result === 'skipped') {
-      return 'skipped';
+    if (result === "skipped") {
+      return "skipped";
     }
     return streamId;
   } catch (err: any) {
-    // 服务端返回 846608：流式消息超过6分钟无法更新，需降级为主动发送
+    // Server returned 846608: stream message inactive for >6 minutes, need to fall back to proactive send
     const errMsg = err?.errmsg || err?.message || String(err);
     if (
       err?.errcode === STREAM_EXPIRED_ERRCODE ||

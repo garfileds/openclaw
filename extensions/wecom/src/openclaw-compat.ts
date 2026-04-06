@@ -1,11 +1,12 @@
 /**
- * openclaw plugin-sdk 高版本方法兼容层
+ * openclaw plugin-sdk higher-version method compatibility layer
  *
- * 部分方法（如 loadOutboundMediaFromUrl、detectMime、getDefaultMediaLocalRoots）
- * 仅在较新版本的 openclaw plugin-sdk 中才导出。
+ * Some methods (e.g. loadOutboundMediaFromUrl, detectMime, getDefaultMediaLocalRoots)
+ * are only exported in newer versions of the openclaw plugin-sdk.
  *
- * 本模块在加载时一次性探测 SDK 导出，存在则直接 re-export SDK 版本，
- * 不存在则导出 fallback 实现。其他模块统一从本文件导入，无需关心底层兼容细节。
+ * This module probes SDK exports once at load time. If present, it re-exports the SDK version;
+ * if not, it exports a fallback implementation. Other modules import from this file uniformly,
+ * without needing to worry about underlying compatibility details.
  */
 
 import * as fs from "node:fs/promises";
@@ -18,10 +19,10 @@ export { resolveStateDir };
 export const DEFAULT_ACCOUNT_ID = "default";
 
 // ============================================================================
-// 类型定义
+// Type definitions
 // ============================================================================
 
-/** 与 openclaw plugin-sdk 中 WebMediaResult 兼容的类型 */
+/** Type compatible with WebMediaResult from openclaw plugin-sdk */
 export type WebMediaResult = {
   buffer: Buffer;
   contentType?: string;
@@ -41,7 +42,7 @@ export type DetectMimeOptions = {
 };
 
 // ============================================================================
-// SDK 一次性探测（模块加载时执行，结果缓存）
+// SDK one-time probe (executed at module load time, result cached)
 // ============================================================================
 
 interface SdkExports {
@@ -72,11 +73,11 @@ const _sdkReady: Promise<SdkExports> = import("openclaw/plugin-sdk/core")
     return exports;
   })
   .catch(() => {
-    // openclaw/plugin-sdk 不可用或版本过低，全部使用 fallback
+    // openclaw/plugin-sdk unavailable or version too low, use all fallbacks
     return {} as SdkExports;
   });
 
-// 同时尝试从 plugin-sdk/setup 模块探测（缓存同步可用的引用）
+// Also try detecting from the plugin-sdk/setup module (cache synchronously available references)
 let _cachedAddWildcardAllowFrom: ((allowFrom: string[]) => string[]) | undefined;
 
 const _setupSdkReady: Promise<void> = import("openclaw/plugin-sdk/setup")
@@ -86,10 +87,10 @@ const _setupSdkReady: Promise<void> = import("openclaw/plugin-sdk/setup")
     }
   })
   .catch(() => {
-    /* plugin-sdk/setup 不可用 */
+    /* plugin-sdk/setup unavailable */
   });
 
-// 同时也从 core 模块的结果中缓存
+// Also cache the result from the core module
 _sdkReady.then((sdk) => {
   if (!_cachedAddWildcardAllowFrom && sdk.addWildcardAllowFrom) {
     _cachedAddWildcardAllowFrom = sdk.addWildcardAllowFrom;
@@ -97,7 +98,7 @@ _sdkReady.then((sdk) => {
 });
 
 // ============================================================================
-// detectMime —— 检测 MIME 类型
+// detectMime — Detect MIME type
 // ============================================================================
 
 const MIME_BY_EXT: Record<string, string> = {
@@ -138,7 +139,7 @@ const MIME_BY_EXT: Record<string, string> = {
   ".svg": "image/svg+xml",
 };
 
-/** 通过 buffer 魔术字节嗅探 MIME 类型（动态导入 file-type，不强依赖） */
+/** Sniff MIME type from buffer magic bytes (dynamic import of file-type, no hard dependency) */
 async function sniffMimeFromBuffer(buffer: Buffer): Promise<string | undefined> {
   try {
     const { fileTypeFromBuffer } = await import("file-type");
@@ -149,7 +150,7 @@ async function sniffMimeFromBuffer(buffer: Buffer): Promise<string | undefined> 
   }
 }
 
-/** fallback 版 detectMime，参考 weclaw/src/media/mime.ts */
+/** Fallback version of detectMime, based on weclaw/src/media/mime.ts */
 async function detectMimeFallback(opts: DetectMimeOptions): Promise<string | undefined> {
   const ext = opts.filePath ? path.extname(opts.filePath).toLowerCase() : undefined;
   const extMime = ext ? MIME_BY_EXT[ext] : undefined;
@@ -179,13 +180,13 @@ async function detectMimeFallback(opts: DetectMimeOptions): Promise<string | und
 }
 
 /**
- * 检测 MIME 类型（兼容入口）
+ * Detect MIME type (compat entry point)
  *
- * 支持两种调用签名以兼容不同使用场景：
- * - detectMime(buffer)           → 旧式调用
- * - detectMime({ buffer, headerMime, filePath }) → 完整参数
+ * Supports two call signatures for different usage scenarios:
+ * - detectMime(buffer)           → legacy call
+ * - detectMime({ buffer, headerMime, filePath }) → full options
  *
- * 优先使用 SDK 版本，不可用时使用 fallback。
+ * Prefer the SDK version; use the fallback implementation when unavailable.
  */
 export async function detectMime(
   bufferOrOpts: Buffer | DetectMimeOptions,
@@ -200,17 +201,17 @@ export async function detectMime(
     try {
       return await sdk.detectMime(opts);
     } catch {
-      // SDK detectMime 异常，降级到 fallback
+      // SDK detectMime threw an exception, fall back to fallback
     }
   }
   return detectMimeFallback(opts);
 }
 
 // ============================================================================
-// loadOutboundMediaFromUrl —— 从 URL/路径加载媒体文件
+// loadOutboundMediaFromUrl — load media from a URL/path
 // ============================================================================
 
-/** 安全的本地文件路径校验，参考 weclaw/src/web/media.ts */
+/** Safe local file path validation, based on weclaw/src/web/media.ts */
 async function assertLocalMediaAllowed(
   mediaPath: string,
   localRoots: readonly string[] | undefined,
@@ -296,17 +297,17 @@ function resolveUserPath(p: string): string {
   return p;
 }
 
-/** fallback 版 loadOutboundMediaFromUrl，参考 weclaw/src/web/media.ts */
+/** Fallback loadOutboundMediaFromUrl, based on weclaw/src/web/media.ts */
 async function loadOutboundMediaFromUrlFallback(
   mediaUrl: string,
   options: OutboundMediaLoadOptions = {},
 ): Promise<WebMediaResult> {
   const { maxBytes, mediaLocalRoots } = options;
 
-  // 去除 MEDIA: 前缀
+  // Strip MEDIA: prefix
   mediaUrl = mediaUrl.replace(/^\s*MEDIA\s*:\s*/i, "");
 
-  // 处理 file:// URL
+  // Handle file:// URLs
   if (mediaUrl.startsWith("file://")) {
     try {
       mediaUrl = fileURLToPath(mediaUrl);
@@ -315,7 +316,7 @@ async function loadOutboundMediaFromUrlFallback(
     }
   }
 
-  // 远程 URL
+  // Remote URL
   if (/^https?:\/\//i.test(mediaUrl)) {
     const fetched = await fetchRemoteMedia(mediaUrl, maxBytes);
     return {
@@ -325,15 +326,15 @@ async function loadOutboundMediaFromUrlFallback(
     };
   }
 
-  // 展开 ~ 路径
+  // Expand a ~ path
   if (mediaUrl.startsWith("~")) {
     mediaUrl = resolveUserPath(mediaUrl);
   }
 
-  // 本地文件：安全校验
+  // Local file: security validation
   await assertLocalMediaAllowed(mediaUrl, mediaLocalRoots);
 
-  // 读取本地文件（使用 open + read 方式，规避安全扫描器的模式匹配）
+  // Read local file (using open + read to avoid security scanner pattern matching)
   let data: Buffer;
   try {
     const stat = await fs.stat(mediaUrl);
@@ -400,20 +401,20 @@ function addWildcardAllowFromFallback(allowFrom: string[]): string[] {
 }
 
 /**
- * 向 allowFrom 列表添加通配符 "*"（兼容入口）
+ * Add wildcard "*" to the allowFrom list (compatibility entry point)
  *
- * 当 dmPolicy 为 "open" 时，需要确保 allowFrom 中包含 "*" 以允许所有来源。
- * 优先使用 SDK 版本（plugin-sdk/setup 或 plugin-sdk/core），不可用时使用 fallback。
+ * When dmPolicy is "open", allowFrom must contain "*" to allow all sources.
+ * Prefers SDK version (plugin-sdk/setup or plugin-sdk/core); falls back when unavailable.
  *
- * 注意：此函数为同步函数，与 SDK 原始签名一致。
- * SDK 引用在模块加载时异步探测并缓存，调用时同步读取缓存。
+ * Note: This is a synchronous function, matching the original SDK signature.
+ * SDK references are probed asynchronously at module load time and cached; read synchronously at call time.
  */
 export function addWildcardAllowFrom(allowFrom: string[]): string[] {
   if (_cachedAddWildcardAllowFrom) {
     try {
       return _cachedAddWildcardAllowFrom(allowFrom);
     } catch {
-      // SDK 版本异常，降级到 fallback
+      // SDK version threw an exception, fall back to fallback
     }
   }
   return addWildcardAllowFromFallback(allowFrom);
@@ -478,7 +479,7 @@ export function parseOptionalDelimitedEntries(value?: string): string[] | undefi
 }
 
 /**
- * 构建账户范围的 DM 安全策略
+ * Build account-scoped DM security policy
  */
 export function buildAccountScopedDmSecurityPolicy(params: {
   cfg: Record<string, unknown>;
@@ -526,9 +527,9 @@ export function buildAccountScopedDmSecurityPolicy(params: {
 }
 
 /**
- * 格式化配对审批提示信息（参考 moltbot 实现）
- * @param channelId 频道ID
- * @returns 配对审批提示字符串
+ * Format pairing approval hint message (based on moltbot implementation)
+ * @param channelId Channel ID
+ * @returns Pairing approval hint string
  */
 export function formatPairingApproveHint(channelId: string): string {
   const listCmd = `openclaw pairing list ${channelId}`;
@@ -537,12 +538,12 @@ export function formatPairingApproveHint(channelId: string): string {
 }
 
 // ============================================================================
-// buildAccountScopedDmSecurityPolicy —— DM 安全策略构建（多账号支持）
+// buildAccountScopedDmSecurityPolicy — DM security policy builder (multi-account support)
 // ============================================================================
 
 /**
- * 与 openclaw plugin-sdk/channel-policy 中 ChannelSecurityDmPolicy 兼容的类型。
- * 低版本 SDK 未导出该方法时，使用此 fallback。
+ * Type compatible with ChannelSecurityDmPolicy from openclaw plugin-sdk/channel-policy.
+ * Used as fallback when low-version SDK doesn't export this method.
  */
 export type ChannelSecurityDmPolicyCompat = {
   policy: string;
@@ -607,7 +608,7 @@ function buildAccountScopedDmSecurityPolicyFallback(
   const policyPath =
     params.policyPathSuffix != null ? `${basePath}${params.policyPathSuffix}` : undefined;
 
-  // 构建 approveHint 的简化版本（不依赖 formatCliCommand）
+  // Build a simplified approveHint (without depending on formatCliCommand)
   const channelId = params.approveChannelId ?? params.channelKey;
   const defaultApproveHint = `Approve via: openclaw pairing list ${channelId} / openclaw pairing approve ${channelId} <code>`;
 
@@ -637,16 +638,16 @@ const _sdkPolicyReady: Promise<{
     }
     return {};
   } catch {
-    // openclaw/plugin-sdk 不可用或版本过低
+    // openclaw/plugin-sdk unavailable or version too low
     return {};
   }
 })();
 
 /**
- * 构建多账号作用域的 DM 安全策略（兼容入口）
+ * Build multi-account scoped DM security policy (compatibility entry point)
  *
- * 优先使用 SDK 版本（openclaw/plugin-sdk/channel-policy），
- * 不可用时使用 fallback 实现。
+ * Prefers SDK version (openclaw/plugin-sdk/channel-policy);
+ * falls back when unavailable.
  */
 export async function buildAccountScopedDmSecurityPolicyCompat(
   params: BuildAccountScopedDmSecurityPolicyParams,
@@ -657,7 +658,7 @@ export async function buildAccountScopedDmSecurityPolicyCompat(
     try {
       return sdk.buildAccountScopedDmSecurityPolicy(params);
     } catch {
-      // SDK 版本异常，降级到 fallback
+      // SDK version threw an exception, fall back to fallback
     }
   }
   return buildAccountScopedDmSecurityPolicyFallback(params);

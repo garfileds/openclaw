@@ -1,7 +1,7 @@
 /**
- * Webhook 模块公共入口
+ * Webhook module public entry point
  *
- * Re-export 所有 Webhook 模式对外暴露的函数和类型。
+ * Re-export all publicly exposed functions and types from the Webhook module.
  */
 
 // ── Handler ─────────────────────────────────────────────────────────
@@ -44,5 +44,5 @@ export {
   WEBHOOK_PATHS,
 } from "./types.js";
 
-// ── State (全局单例) ────────────────────────────────────────────────
+// ── State (global singleton) ────────────────────────────────────────
 export { monitorState, WebhookMonitorState } from "./state.js";

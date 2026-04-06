@@ -6,9 +6,9 @@ type ProxyDispatcher = Dispatcher;
 const proxyDispatchers = new Map<string, ProxyDispatcher>();
 
 /**
- * **getProxyDispatcher (获取代理 Dispatcher)**
- * 
- * 缓存并复用 ProxyAgent，避免重复创建连接池。
+ * **getProxyDispatcher (get proxy Dispatcher)**
+ *
+ * Caches and reuses ProxyAgent instances to avoid creating duplicate connection pools.
  */
 function getProxyDispatcher(proxyUrl: string): ProxyDispatcher {
   const existing = proxyDispatchers.get(proxyUrl);
@@ -33,11 +33,11 @@ function mergeAbortSignal(params: {
 }
 
 /**
- * **WecomHttpOptions (HTTP 选项)**
- * 
- * @property proxyUrl 代理服务器地址
- * @property timeoutMs 请求超时时间 (毫秒)
- * @property signal AbortSignal 信号
+ * **WecomHttpOptions (HTTP options)**
+ *
+ * @property proxyUrl Proxy server address
+ * @property timeoutMs Request timeout (ms)
+ * @property signal AbortSignal
  */
 export type WecomHttpOptions = {
   proxyUrl?: string;
@@ -46,18 +46,25 @@ export type WecomHttpOptions = {
 };
 
 /**
- * **wecomFetch (统一 HTTP 请求)**
- * 
- * 基于 `undici` 的 fetch 封装，自动处理 ProxyAgent 和 Timeout。
- * 所有对企业微信 API 的调用都应经过此函数。
+ * **wecomFetch (unified HTTP request)**
+ *
+ * A fetch wrapper based on `undici` that automatically handles ProxyAgent and Timeout.
+ * All calls to the WeCom API should go through this function.
  */
-export async function wecomFetch(input: string | URL, init?: RequestInit, opts?: WecomHttpOptions): Promise<Response> {
+export async function wecomFetch(
+  input: string | URL,
+  init?: RequestInit,
+  opts?: WecomHttpOptions,
+): Promise<Response> {
   const proxyUrl = opts?.proxyUrl?.trim() ?? "";
   const dispatcher = proxyUrl ? getProxyDispatcher(proxyUrl) : undefined;
 
   const initSignal = init?.signal ?? undefined;
-  const signal = mergeAbortSignal({ signal: opts?.signal ?? initSignal, timeoutMs: opts?.timeoutMs });
-  
+  const signal = mergeAbortSignal({
+    signal: opts?.signal ?? initSignal,
+    timeoutMs: opts?.timeoutMs,
+  });
+
   const headers = new Headers(init?.headers ?? {});
   if (!headers.has("User-Agent")) {
     headers.set("User-Agent", "OpenClaw/2.0 (WeCom-Agent)");
@@ -71,21 +78,26 @@ export async function wecomFetch(input: string | URL, init?: RequestInit, opts?:
   };
 
   try {
-    return await undiciFetch(input, nextInit as Parameters<typeof undiciFetch>[1]) as unknown as Response;
+    return (await undiciFetch(
+      input,
+      nextInit as Parameters<typeof undiciFetch>[1],
+    )) as unknown as Response;
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "TypeError" && err.message === "fetch failed") {
       const cause = (err as any).cause;
-      console.error(`[wecom-http] fetch failed: ${input} (proxy: ${proxyUrl || "none"})${cause ? ` - cause: ${String(cause)}` : ""}`);
+      console.error(
+        `[wecom-http] fetch failed: ${input} (proxy: ${proxyUrl || "none"})${cause ? ` - cause: ${String(cause)}` : ""}`,
+      );
     }
     throw err;
   }
 }
 
 /**
- * **readResponseBodyAsBuffer (读取响应 Body)**
- * 
- * 将 Response Body 读取为 Buffer，支持最大字节限制以防止内存溢出。
- * 适用于下载媒体文件等场景。
+ * **readResponseBodyAsBuffer (read response body)**
+ *
+ * Reads the Response body as a Buffer, with an optional max byte limit to prevent memory overflow.
+ * Suitable for scenarios like downloading media files.
  */
 export async function readResponseBodyAsBuffer(res: Response, maxBytes?: number): Promise<Buffer> {
   if (!res.body) return Buffer.alloc(0);

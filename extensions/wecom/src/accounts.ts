@@ -7,25 +7,25 @@ import type { WeComConfig, WeComAccountConfig, ResolvedWeComAccount } from "./ut
 import { DefaultWsUrl } from "./utils.js";
 
 // ============================================================================
-// 多账号配置结构
+// Multi-account configuration structure
 // ============================================================================
 
 /**
- * 企业微信多账号配置结构（扩展 WeComConfig）
+ * WeCom multi-account configuration structure (extends WeComConfig)
  */
 export interface WeComMultiAccountConfig extends WeComConfig {
-  /** 默认账号 ID */
+  /** Default account ID */
   defaultAccount?: string;
-  /** 多账号配置 */
+  /** Multi-account configuration */
   accounts?: Record<string, WeComAccountConfig>;
 }
 
 // ============================================================================
-// 账号列举
+// Account enumeration
 // ============================================================================
 
 /**
- * 列出 accounts 字段中配置的所有账号 ID（已 normalize）。
+ * List all account IDs configured in the accounts field (normalized).
  */
 function listConfiguredAccountIds(cfg: OpenClawConfig): string[] {
   const accounts = (cfg.channels?.[CHANNEL_ID] as WeComMultiAccountConfig)?.accounts;
@@ -36,37 +36,38 @@ function listConfiguredAccountIds(cfg: OpenClawConfig): string[] {
 }
 
 /**
- * 判断是否为多账号模式（即配置中存在 accounts 字段）。
- * 用于区分单账号/多账号模式的分支判断，替代 `accountId === DEFAULT_ACCOUNT_ID` 的不可靠判断。
+ * Determine whether multi-account mode is active (i.e. the accounts field exists in config).
+ * Used for branching between single-account and multi-account modes,
+ * replacing the unreliable `accountId === DEFAULT_ACCOUNT_ID` check.
  */
 export function hasMultiAccounts(cfg: OpenClawConfig): boolean {
   return listConfiguredAccountIds(cfg).length > 0;
 }
 
 /**
- * 列出所有企业微信账号 ID。
- * 如果没有 accounts 字段，返回 [DEFAULT_ACCOUNT_ID] 以向后兼容。
+ * List all WeCom account IDs.
+ * If the accounts field is absent, returns [DEFAULT_ACCOUNT_ID] for backward compatibility.
  */
 export function listWeComAccountIds(cfg: OpenClawConfig): string[] {
   const ids = listConfiguredAccountIds(cfg);
   if (ids.length === 0) {
-    // 向后兼容：未配置 accounts 时使用默认账号
+    // Backward compatibility: use default account when accounts is not configured
     return [DEFAULT_ACCOUNT_ID];
   }
   return [...ids].sort((a: string, b: string) => a.localeCompare(b));
 }
 
 // ============================================================================
-// 默认账号解析
+// Default account resolution
 // ============================================================================
 
 /**
- * 解析默认账号 ID。
+ * Resolve the default account ID.
  *
- * 优先级：
- * 1. 显式设置的 defaultAccount
- * 2. 包含 DEFAULT_ACCOUNT_ID 的账号列表
- * 3. 字母序第一个账号
+ * Priority:
+ * 1. Explicitly set defaultAccount
+ * 2. Account list containing DEFAULT_ACCOUNT_ID
+ * 3. First account in alphabetical order
  */
 export function resolveDefaultWeComAccountId(cfg: OpenClawConfig): string {
   const wecomConfig = cfg.channels?.[CHANNEL_ID] as WeComMultiAccountConfig | undefined;
@@ -82,26 +83,27 @@ export function resolveDefaultWeComAccountId(cfg: OpenClawConfig): string {
 }
 
 // ============================================================================
-// 配置合并
+// Configuration merging
 // ============================================================================
 
 /**
- * 合并顶层配置与账号级配置（账号级覆盖顶层）。
+ * Merge top-level config with account-level config (account-level overrides top-level).
  *
- * 顶层字段（如 dmPolicy、allowFrom）作为所有账号的默认值，
- * accounts.xxx 中的字段会覆盖顶层的同名字段。
- * 对于 groups 等嵌套 Record 对象，使用深层合并（账号级条目覆盖同 key，但不丢失基础配置中的其他 key）。
+ * Top-level fields (e.g. dmPolicy, allowFrom) serve as defaults for all accounts.
+ * Fields in accounts.xxx override the corresponding top-level fields.
+ * For nested Record objects like groups, deep merge is used
+ * (account-level entries override same keys, but other keys from the base config are preserved).
  */
 function mergeWeComAccountConfig(cfg: OpenClawConfig, accountId: string): WeComConfig {
   const wecomConfig = cfg.channels?.[CHANNEL_ID] as WeComMultiAccountConfig | undefined;
 
-  // 提取基础配置（排除 accounts 和 defaultAccount 字段避免递归）
+  // Extract base config (exclude accounts and defaultAccount fields to avoid recursion)
   const { accounts: _ignored, defaultAccount: _da, ...base } = wecomConfig ?? {};
 
-  // 查找账号级覆盖（支持 normalize 后的 key 匹配）
+  // Find account-level overrides (supports normalized key matching)
   const account = findAccountConfig(wecomConfig?.accounts, accountId);
 
-  // 深层合并：对 groups 做嵌套合并，其余字段用账号级覆盖
+  // Deep merge: nested merge for groups, account-level override for other fields
   const { groups: baseGroups, ...baseRest } = base;
   const { groups: accountGroups, ...accountRest } = account;
 
@@ -116,17 +118,17 @@ function mergeWeComAccountConfig(cfg: OpenClawConfig, accountId: string): WeComC
 }
 
 /**
- * 在 accounts Record 中按 normalize 后的 accountId 查找配置。
- * 避免因大小写差异导致找不到账号。
+ * Find config in the accounts Record by normalized accountId.
+ * Prevents lookup failures due to case differences.
  */
 function findAccountConfig(
   accounts: Record<string, WeComAccountConfig> | undefined,
   accountId: string,
 ): WeComAccountConfig {
   if (!accounts) return {};
-  // 精确匹配优先
+  // Exact match first
   if (accounts[accountId]) return accounts[accountId];
-  // normalize 后匹配
+  // Match after normalization
   const normalized = normalizeAccountId(accountId);
   for (const [key, value] of Object.entries(accounts)) {
     if (normalizeAccountId(key) === normalized) return value;
@@ -135,16 +137,16 @@ function findAccountConfig(
 }
 
 // ============================================================================
-// 账号解析
+// Account resolution
 // ============================================================================
 
 /**
- * 解析单个企业微信账号的完整配置。
+ * Resolve the full configuration for a single WeCom account.
  *
- * 支持：
- * - 显式指定 accountId → 使用该 accountId
- * - 未指定 → 使用默认账号
- * - 单账号模式（无 accounts 字段） → 直接读取顶层配置
+ * Supports:
+ * - Explicit accountId → uses that accountId
+ * - No accountId specified → uses the default account
+ * - Single-account mode (no accounts field) → reads top-level config directly
  */
 export function resolveWeComAccountMulti(params: {
   cfg: OpenClawConfig;
@@ -157,16 +159,16 @@ export function resolveWeComAccountMulti(params: {
 
   const wecomConfig = params.cfg.channels?.[CHANNEL_ID] as WeComMultiAccountConfig | undefined;
 
-  // 顶层 enabled 状态
+  // Top-level enabled state
   const baseEnabled = wecomConfig?.enabled !== false;
 
-  // 合并配置
+  // Merge config
   const merged = mergeWeComAccountConfig(params.cfg, accountId);
 
-  // 账号级 enabled 状态
+  // Account-level enabled state
   const accountEnabled = merged.enabled !== false;
 
-  // 解析 Agent 子配置
+  // Resolve Agent sub-configuration
   const agentCfg = merged.agent as WecomAgentConfig | undefined;
   let agent: ResolvedAgentAccount | undefined;
   if (agentCfg?.corpId && agentCfg?.corpSecret && agentCfg?.token && agentCfg?.encodingAESKey) {
@@ -204,11 +206,11 @@ export function resolveWeComAccountMulti(params: {
 }
 
 // ============================================================================
-// 批量查询
+// Batch queries
 // ============================================================================
 
 /**
- * 列出所有已启用且已配置凭据的账号。
+ * List all enabled accounts that have configured credentials.
  */
 export function listEnabledWeComAccounts(cfg: OpenClawConfig): ResolvedWeComAccount[] {
   return listWeComAccountIds(cfg)
@@ -222,18 +224,18 @@ export function listEnabledWeComAccounts(cfg: OpenClawConfig): ResolvedWeComAcco
 }
 
 // ============================================================================
-// 配置写入（多账号感知）
+// Config write (multi-account aware)
 // ============================================================================
 
 /**
- * 写入企业微信账户配置（自动区分单账号/多账号模式）。
+ * Write WeCom account configuration (automatically distinguishes single/multi-account mode).
  *
- * - 单账号模式（无 accounts 字段）：写入顶层 channels.wecom
- * - 多账号模式：写入 channels.wecom.accounts[accountId]
+ * - Single-account mode (no accounts field): writes to top-level channels.wecom
+ * - Multi-account mode: writes to channels.wecom.accounts[accountId]
  *
- * @param cfg  当前全局配置
- * @param updates  要写入的部分配置字段
- * @param accountId  目标账号 ID（默认写入默认账号）
+ * @param cfg  Current global configuration
+ * @param updates  Partial config fields to write
+ * @param accountId  Target account ID (defaults to the default account)
  */
 export function setWeComAccountMulti(
   cfg: OpenClawConfig,
@@ -244,7 +246,7 @@ export function setWeComAccountMulti(
   const isMulti = hasMultiAccounts(cfg);
 
   if (!isMulti) {
-    // 单账号模式：合并到顶层
+    // Single-account mode: merge into top-level
     const existing = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComConfig;
     const merged: WeComConfig = { ...existing, ...updates };
     return {
@@ -256,7 +258,7 @@ export function setWeComAccountMulti(
     };
   }
 
-  // 多账号模式：合并到 accounts[accountId]
+  // Multi-account mode: merge into accounts[accountId]
   const wecomConfig = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComMultiAccountConfig;
   const existingAccount = wecomConfig.accounts?.[resolvedAccountId] ?? {};
   const mergedAccount: WeComAccountConfig = { ...existingAccount, ...updates };

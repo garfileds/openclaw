@@ -1,54 +1,54 @@
 /**
- * 业务错误码检查拦截器
+ * Business Error Code Check Interceptor
  *
- * 检查 tools/call 返回结果中是否包含需要清理缓存的业务错误码。
- * MCP Server 可能在正常的 JSON-RPC 响应中返回业务层错误，
- * 这些错误被包裹在 result.content[].text 中，需要解析后判断。
+ * Checks whether the tools/call return result contains business error codes that require cache cleanup.
+ * MCP Server may return business-layer errors within normal JSON-RPC responses,
+ * wrapped in result.content[].text, which need to be parsed and evaluated.
  *
- * 此拦截器对所有 call 调用生效。
+ * This interceptor applies to all call invocations.
  */
 
 import { clearCategoryCache } from "../transport.js";
 import type { CallInterceptor, CallContext } from "./types.js";
 
 // ============================================================================
-// 常量
+// Constants
 // ============================================================================
 
 /**
- * 需要触发缓存清理的业务错误码集合
+ * Set of business error codes that trigger cache cleanup
  *
- * 这些错误码出现在 MCP 工具调用返回的 content 文本中（业务层面），
- * 与 JSON-RPC 层面的错误码不同，需要在此处额外检测。
+ * These error codes appear in the content text returned by MCP tool calls (business layer),
+ * different from JSON-RPC layer error codes, and need additional detection here.
  *
- * - 850002: 机器人未被授权使用对应能力，需清理缓存以便下次重新拉取配置
+ * - 850002: Bot is not authorized to use the corresponding capability; clear cache to re-fetch config next time
  */
 const BIZ_CACHE_CLEAR_ERROR_CODES = new Set([850002]);
 
 // ============================================================================
-// 拦截器实现
+// Interceptor Implementation
 // ============================================================================
 
 export const bizErrorInterceptor: CallInterceptor = {
   name: "biz-error",
 
-  /** 对所有 call 调用生效 */
+  /** Applies to all call invocations */
   match: () => true,
 
-  /** 检查返回结果中的业务错误码，必要时清理缓存 */
+  /** Check return result for business error codes; clear cache if necessary */
   afterCall(ctx: CallContext, result: unknown): unknown {
     checkBizErrorAndClearCache(result, ctx.category);
-    // 不修改 result，透传给下一个拦截器
+    // Don't modify result; pass through to the next interceptor
     return result;
   },
 };
 
 // ============================================================================
-// 内部实现
+// Internal Implementation
 // ============================================================================
 
 /**
- * 检查 tools/call 的返回结果中是否包含需要清理缓存的业务错误码
+ * Check if tools/call return result contains business error codes that require cache cleanup
  */
 function checkBizErrorAndClearCache(result: unknown, category: string): void {
   if (!result || typeof result !== "object") return;
@@ -66,7 +66,7 @@ function checkBizErrorAndClearCache(result: unknown, category: string): void {
         return;
       }
     } catch {
-      // text 不是 JSON 格式，跳过
+      // text is not JSON format, skip
     }
   }
 }

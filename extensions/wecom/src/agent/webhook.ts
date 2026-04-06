@@ -1,10 +1,10 @@
 /**
- * Agent Webhook HTTP 入口
+ * Agent Webhook HTTP Entry Point
  *
- * 职责：
- * 1. 管理 AgentWebhookTarget 注册表（多账号共用同一 path 时按签名选中）
- * 2. GET  → echostr URL 验证
- * 3. POST → XML body 解密 → 调用 handleAgentWebhook
+ * Responsibilities:
+ * 1. Manage AgentWebhookTarget registry (multiple accounts sharing the same path are matched by signature)
+ * 2. GET  → echostr URL verification
+ * 3. POST → XML body decryption → call handleAgentWebhook
  */
 
 import crypto from "node:crypto";
@@ -131,7 +131,7 @@ export async function handleWecomAgentWebhookRequest(
   const path = resolvePath(req);
   const reqId = crypto.randomUUID().slice(0, 8);
 
-  // 检查是否为 Agent 路径
+  // Check if this is an Agent path
   const isAgentPath =
     path === WEBHOOK_PATHS.AGENT ||
     path === WEBHOOK_PATHS.AGENT_PLUGIN ||
@@ -155,10 +155,10 @@ export async function handleWecomAgentWebhookRequest(
   const nonce = query.get("nonce") ?? "";
   const signature = resolveSignatureParam(query);
 
-  // ── GET: echostr URL 验证 ──────────────────────────────────────────
+  // ── GET: echostr URL verification ──────────────────────────────────────────
   if (req.method === "GET") {
     const echostr = query.get("echostr") ?? "";
-    // 用签名匹配正确的 target
+    // Match the correct target by signature
     const matched = targets.filter((t) => {
       const wc = new WecomCrypto(t.agent.token, t.agent.encodingAESKey, t.agent.corpId);
       return wc.verifySignature(signature, timestamp, nonce, echostr);
@@ -195,7 +195,7 @@ export async function handleWecomAgentWebhookRequest(
     }
   }
 
-  // ── POST: XML 消息回调 ─────────────────────────────────────────────
+  // ── POST: XML message callback ─────────────────────────────────────────────
   if (req.method !== "POST") return false;
 
   const rawBody = await readTextBody(req, LIMITS.MAX_REQUEST_BODY_SIZE);
@@ -216,7 +216,7 @@ export async function handleWecomAgentWebhookRequest(
     return true;
   }
 
-  // 签名匹配
+  // Signature matching
   const matched = targets.filter((t) => {
     const wc = new WecomCrypto(t.agent.token, t.agent.encodingAESKey, t.agent.corpId);
     return wc.verifySignature(signature, timestamp, nonce, encrypted);
@@ -258,7 +258,7 @@ export async function handleWecomAgentWebhookRequest(
     return true;
   }
 
-  // agentId 一致性校验（仅告警）
+  // agentId consistency check (warning only)
   const inboundAgentId = normalizeAgentIdValue(extractAgentId(parsed));
   if (
     inboundAgentId !== undefined &&

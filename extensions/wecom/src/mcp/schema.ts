@@ -1,21 +1,37 @@
 /**
- * MCP Schema 清洗模块
+ * MCP Schema Sanitization Module
  *
- * 负责内联 $ref/$defs 引用并移除 Gemini 不支持的 JSON Schema 关键词，
- * 防止 Gemini 模型解析 function response 时报 400 错误。
+ * Responsible for inlining $ref/$defs references and removing JSON Schema keywords
+ * unsupported by Gemini, preventing 400 errors when Gemini parses function responses.
  */
 
-/** Gemini 不支持的 JSON Schema 关键词 */
+/** JSON Schema keywords unsupported by Gemini */
 const GEMINI_UNSUPPORTED_KEYWORDS = new Set([
-  "patternProperties", "additionalProperties", "$schema", "$id", "$ref", "$defs",
-  "definitions", "examples", "minLength", "maxLength", "minimum", "maximum",
-  "multipleOf", "pattern", "format", "minItems", "maxItems", "uniqueItems",
-  "minProperties", "maxProperties",
+  "patternProperties",
+  "additionalProperties",
+  "$schema",
+  "$id",
+  "$ref",
+  "$defs",
+  "definitions",
+  "examples",
+  "minLength",
+  "maxLength",
+  "minimum",
+  "maximum",
+  "multipleOf",
+  "pattern",
+  "format",
+  "minItems",
+  "maxItems",
+  "uniqueItems",
+  "minProperties",
+  "maxProperties",
 ]);
 
 /**
- * 清洗 JSON Schema，内联 $ref 引用并移除 Gemini 不支持的关键词，
- * 防止 Gemini 模型解析 function response 时报 400 错误。
+ * Sanitize JSON Schema by inlining $ref references and removing keywords
+ * unsupported by Gemini, preventing 400 errors when Gemini parses function responses.
  */
 export function cleanSchemaForGemini(schema: unknown): unknown {
   if (!schema || typeof schema !== "object") return schema;
@@ -23,10 +39,12 @@ export function cleanSchemaForGemini(schema: unknown): unknown {
 
   const obj = schema as Record<string, unknown>;
 
-  // 收集 $defs/definitions 用于后续 $ref 内联解析
+  // Collect $defs/definitions for subsequent $ref inline resolution
   const defs: Record<string, unknown> = {
-    ...(obj.$defs && typeof obj.$defs === "object" ? obj.$defs as Record<string, unknown> : {}),
-    ...(obj.definitions && typeof obj.definitions === "object" ? obj.definitions as Record<string, unknown> : {}),
+    ...(obj.$defs && typeof obj.$defs === "object" ? (obj.$defs as Record<string, unknown>) : {}),
+    ...(obj.definitions && typeof obj.definitions === "object"
+      ? (obj.definitions as Record<string, unknown>)
+      : {}),
   };
 
   return cleanWithDefs(obj, defs, new Set());
@@ -42,7 +60,7 @@ function cleanWithDefs(
 
   const obj = schema as Record<string, unknown>;
 
-  // 合并当前层级的 $defs/definitions 到 defs 中
+  // Merge current level's $defs/definitions into defs
   if (obj.$defs && typeof obj.$defs === "object") {
     Object.assign(defs, obj.$defs as Record<string, unknown>);
   }
@@ -50,10 +68,10 @@ function cleanWithDefs(
     Object.assign(defs, obj.definitions as Record<string, unknown>);
   }
 
-  // 处理 $ref 引用：尝试内联解析
+  // Handle $ref references: attempt inline resolution
   if (typeof obj.$ref === "string") {
     const ref = obj.$ref;
-    if (refStack.has(ref)) return {}; // 防止循环引用
+    if (refStack.has(ref)) return {}; // Prevent circular references
 
     const match = ref.match(/^#\/(?:\$defs|definitions)\/(.+)$/);
     if (match && match[1] && defs[match[1]]) {
@@ -61,7 +79,7 @@ function cleanWithDefs(
       nextStack.add(ref);
       return cleanWithDefs(defs[match[1]], defs, nextStack);
     }
-    return {}; // 无法解析的 $ref，返回空对象
+    return {}; // Unresolvable $ref, return empty object
   }
 
   const cleaned: Record<string, unknown> = {};
@@ -76,7 +94,8 @@ function cleanWithDefs(
     if (key === "properties" && value && typeof value === "object" && !Array.isArray(value)) {
       cleaned[key] = Object.fromEntries(
         Object.entries(value as Record<string, unknown>).map(([k, v]) => [
-          k, cleanWithDefs(v, defs, refStack),
+          k,
+          cleanWithDefs(v, defs, refStack),
         ]),
       );
     } else if (key === "items" && value) {
@@ -84,14 +103,14 @@ function cleanWithDefs(
         ? value.map((item) => cleanWithDefs(item, defs, refStack))
         : cleanWithDefs(value, defs, refStack);
     } else if ((key === "anyOf" || key === "oneOf" || key === "allOf") && Array.isArray(value)) {
-      // 过滤掉 null 类型的变体
+      // Filter out null type variants
       const nonNull = value.filter((v) => {
         if (!v || typeof v !== "object") return true;
         const r = v as Record<string, unknown>;
         return r.type !== "null";
       });
       if (nonNull.length === 1) {
-        // 只剩一个变体时直接内联
+        // Only one variant left, inline directly
         const single = cleanWithDefs(nonNull[0], defs, refStack);
         if (single && typeof single === "object" && !Array.isArray(single)) {
           Object.assign(cleaned, single as Record<string, unknown>);

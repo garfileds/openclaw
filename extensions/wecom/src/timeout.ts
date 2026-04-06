@@ -1,16 +1,16 @@
 /**
- * 超时控制工具模块
+ * Timeout control utility module
  *
- * 为异步操作提供统一的超时保护机制
+ * Provides a unified timeout protection mechanism for async operations
  */
 
 /**
- * 为 Promise 添加超时保护
+ * Adds timeout protection to a Promise
  *
- * @param promise - 原始 Promise
- * @param timeoutMs - 超时时间（毫秒）
- * @param message - 超时错误消息
- * @returns 带超时保护的 Promise
+ * @param promise - The original Promise
+ * @param timeoutMs - Timeout duration (milliseconds)
+ * @param message - Timeout error message
+ * @returns A Promise with timeout protection
  */
 export function withTimeout<T>(
   promise: Promise<T>,
@@ -35,7 +35,7 @@ export function withTimeout<T>(
 }
 
 /**
- * 超时错误类型
+ * Timeout error type
  */
 export class TimeoutError extends Error {
   constructor(message: string) {

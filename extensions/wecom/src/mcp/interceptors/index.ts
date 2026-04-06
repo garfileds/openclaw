@@ -1,52 +1,52 @@
 /**
- * MCP call 拦截器注册表与调度入口
+ * MCP call interceptor registry and dispatch entry
  *
- * 所有 call 拦截器在此注册，按注册顺序执行。
- * 新增拦截器只需：
- *   1. 在 interceptors/ 目录下新建文件，实现 CallInterceptor 接口
- *   2. 在下方 interceptors 数组中注册
+ * All call interceptors are registered here and executed in registration order.
+ * To add a new interceptor, simply:
+ *   1. Create a new file in the interceptors/ directory and implement the CallInterceptor interface
+ *   2. Register it in the interceptors array below
  *
- * tool.ts 的 handleCall 无需任何改动。
+ * No changes are required in tool.ts's handleCall.
  */
 
+import type { SendJsonRpcOptions } from "../transport.js";
 import { bizErrorInterceptor } from "./biz-error.js";
 import { mediaInterceptor } from "./msg-media.js";
 import { smartpageCreateInterceptor } from "./smartpage-create.js";
 import { smartpageExportInterceptor } from "./smartpage-export.js";
 import type { CallContext, CallInterceptor, BeforeCallOptions } from "./types.js";
-import type { SendJsonRpcOptions } from "../transport.js";
 
 export type { CallContext, CallInterceptor, BeforeCallOptions } from "./types.js";
 
 // ============================================================================
-// 拦截器注册表（按注册顺序执行）
+// Interceptor registry (executed in registration order)
 // ============================================================================
 
 const interceptors: CallInterceptor[] = [
-  bizErrorInterceptor,         // 业务错误码检查（所有 call 生效）
-  mediaInterceptor,            // get_msg_media base64 拦截
-  smartpageCreateInterceptor,  // smartpage_create 本地文件读取
-  smartpageExportInterceptor,  // smartpage_get_export_result content → 本地文件
+  bizErrorInterceptor, // Business error code check (applies to all calls)
+  mediaInterceptor, // get_msg_media base64 interception
+  smartpageCreateInterceptor, // smartpage_create local file loading
+  smartpageExportInterceptor, // smartpage_get_export_result content → local file
 ];
 
 // ============================================================================
-// 调度 API
+// Dispatch API
 // ============================================================================
 
-/** resolveBeforeCall 的返回值 */
+/** Return value of resolveBeforeCall */
 export interface ResolvedBeforeCall {
-  /** 合并后的 sendJsonRpc 选项（如超时时间） */
+  /** Merged sendJsonRpc options (for example, timeout settings) */
   options?: SendJsonRpcOptions;
-  /** 替换后的 args（如从本地文件读取的请求体） */
+  /** Replaced args (for example, a request body loaded from a local file) */
   args?: Record<string, unknown>;
 }
 
 /**
- * 收集匹配的 beforeCall 配置，合并后返回
+ * Collect matching beforeCall configs and return the merged result
  *
- * 合并策略：
- * - timeoutMs: 取所有拦截器返回值中的最大值
- * - args: 后注册的拦截器覆盖前者（一般同一调用只有一个拦截器会返回 args）
+ * Merge strategy:
+ * - timeoutMs: use the largest value returned by any interceptor
+ * - args: later-registered interceptors override earlier ones (usually only one interceptor returns args for a given call)
  */
 export async function resolveBeforeCall(ctx: CallContext): Promise<ResolvedBeforeCall> {
   let mergedTimeoutMs: number | undefined;
@@ -57,9 +57,8 @@ export async function resolveBeforeCall(ctx: CallContext): Promise<ResolvedBefor
 
     const opts = await interceptor.beforeCall(ctx);
     if (opts?.timeoutMs !== undefined) {
-      mergedTimeoutMs = mergedTimeoutMs === undefined
-        ? opts.timeoutMs
-        : Math.max(mergedTimeoutMs, opts.timeoutMs);
+      mergedTimeoutMs =
+        mergedTimeoutMs === undefined ? opts.timeoutMs : Math.max(mergedTimeoutMs, opts.timeoutMs);
     }
     if (opts?.args !== undefined) {
       mergedArgs = opts.args;
@@ -73,10 +72,10 @@ export async function resolveBeforeCall(ctx: CallContext): Promise<ResolvedBefor
 }
 
 /**
- * 依次执行匹配的 afterCall 拦截器，管道式传递 result
+ * Execute matching afterCall interceptors sequentially, passing result through pipeline
  *
- * 前一个拦截器的返回值作为下一个拦截器的输入。
- * 拦截器若不需要修改 result，应原样返回。
+ * The return value of the previous interceptor becomes the input of the next.
+ * Interceptors that don't need to modify result should return it as-is.
  */
 export async function runAfterCall(ctx: CallContext, result: unknown): Promise<unknown> {
   let current = result;

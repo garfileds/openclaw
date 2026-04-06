@@ -1,50 +1,50 @@
 /**
- * wecom_mcp — 模拟 MCP 调用的 Agent Tool
+ * wecom_mcp — Agent tool that simulates MCP calls
  *
- * 通过 MCP Streamable HTTP 传输协议调用企业微信 MCP Server，
- * 提供 list（列出所有工具）和 call（调用工具）两个操作。
+ * Calls the WeCom MCP Server through the MCP Streamable HTTP transport protocol
+ * and provides two operations: list (list all tools) and call (invoke a tool).
  *
- * 在 skills 中的使用方式：
+ * Usage in skills:
  *   wecom_mcp list <category>
  *   wecom_mcp call <category> <method> '<jsonArgs>'
  *
- * 示例：
+ * Example:
  *   wecom_mcp list contact
  *   wecom_mcp call contact getContact '{}'
  */
 
-import { sendJsonRpc, type McpToolInfo } from "./transport.js";
-import { cleanSchemaForGemini } from "./schema.js";
 import { resolveBeforeCall, runAfterCall } from "./interceptors/index.js";
+import { cleanSchemaForGemini } from "./schema.js";
+import { sendJsonRpc, type McpToolInfo } from "./transport.js";
 
 // ============================================================================
-// 类型定义
+// Type definitions
 // ============================================================================
 
-/** wecom_mcp 的入参 */
+/** Parameters for wecom_mcp */
 interface WeComToolsParams {
-  /** 操作类型：list | call */
+  /** Action type: list | call */
   action: "list" | "call";
-  /** MCP 品类，对应 mcpConfig 中的 key，如 doc、contact */
+  /** MCP category, corresponding to the key in mcpConfig, such as doc or contact */
   category: string;
-  /** 调用的 MCP 方法名（action=call 时必填） */
+  /** Name of the MCP method to call (required when action=call) */
   method?: string;
-  /** 调用 MCP 方法的 JSON 参数（action=call 时使用） */
+  /** JSON arguments for the MCP method call (used when action=call) */
   args?: string | Record<string, unknown>;
 }
 
 // ============================================================================
-// 响应构造辅助
+// Response construction helpers
 // ============================================================================
 
-/** 构造统一的文本响应结构 */
+/** Build a unified text response shape */
 const textResult = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
 
-/** 构造错误响应 */
+/** Build an error response */
 const errorResult = (err: unknown) => {
-  // 适配企业微信 API 返回的 { errcode, errmsg } 结构
+  // Adapt the WeCom API's { errcode, errmsg } response shape
   if (err && typeof err === "object" && "errcode" in err) {
     const { errcode, errmsg } = err as { errcode: number; errmsg?: string };
     return textResult({ error: errmsg ?? `错误码: ${errcode}`, errcode });
@@ -59,7 +59,9 @@ const errorResult = (err: unknown) => {
 // ============================================================================
 
 const handleList = async (category: string): Promise<unknown> => {
-  const result = await sendJsonRpc(category, "tools/list") as { tools?: McpToolInfo[] } | undefined;
+  const result = (await sendJsonRpc(category, "tools/list")) as
+    | { tools?: McpToolInfo[] }
+    | undefined;
 
   const tools = result?.tools ?? [];
   if (tools.length === 0) {
@@ -100,26 +102,31 @@ const handleCall = async (
   if (resolvedArgs) {
     console.log(
       `[mcp] handleCall ${category}/${method} 拦截器替换 args: ${JSON.stringify(resolvedArgs).slice(0, 500)}` +
-      (JSON.stringify(resolvedArgs).length > 500 ? "...(truncated)" : ""),
+        (JSON.stringify(resolvedArgs).length > 500 ? "...(truncated)" : ""),
     );
   }
   if (options) {
     console.log(`[mcp] handleCall ${category}/${method} 拦截器选项: ${JSON.stringify(options)}`);
   }
 
-  // 2. 执行 MCP 调用
-  const result = await sendJsonRpc(category, "tools/call", {
-    name: method,
-    arguments: finalArgs,
-  }, options);
+  // 2. Execute MCP call
+  const result = await sendJsonRpc(
+    category,
+    "tools/call",
+    {
+      name: method,
+      arguments: finalArgs,
+    },
+    options,
+  );
 
   const rpcDone = performance.now();
   const rpcMs = (rpcDone - callStart).toFixed(1);
 
   const resultStr = JSON.stringify(result);
   console.log(
-    `[mcp] handleCall ${category}/${method} MCP 响应 (${rpcMs}ms): ${resultStr.slice(0, 800)}` +
-    (resultStr.length > 800 ? "...(truncated)" : ""),
+    `[mcp] handleCall ${category}/${method} MCP response (${rpcMs}ms): ${resultStr.slice(0, 800)}` +
+      (resultStr.length > 800 ? "...(truncated)" : ""),
   );
 
   // 3. 管道式执行 afterCall 拦截器（业务错误码检查、响应变换等）
@@ -133,11 +140,11 @@ const handleCall = async (
     const finalStr = JSON.stringify(finalResult);
     console.log(
       `[mcp] handleCall ${category}/${method} afterCall 变换后 (${interceptMs}ms): ${finalStr.slice(0, 500)}` +
-      (finalStr.length > 500 ? "...(truncated)" : ""),
+        (finalStr.length > 500 ? "...(truncated)" : ""),
     );
     console.log(
-      `[mcp] handleCall ${category}/${method} 总耗时: ${totalMs}ms` +
-      ` (MCP请求: ${rpcMs}ms, 拦截处理: ${interceptMs}ms)`,
+      `[mcp] handleCall ${category}/${method} total: ${totalMs}ms` +
+        ` (MCP request: ${rpcMs}ms, intercept: ${interceptMs}ms)`,
     );
   } else {
     console.log(`[mcp] handleCall ${category}/${method} 耗时: ${rpcMs}ms`);
@@ -207,7 +214,8 @@ export function createWeComMcpTool() {
         },
         args: {
           type: ["string", "object"],
-          description: "调用 MCP 方法的参数，可以是 JSON 字符串或对象（action=call 时使用，默认 {}）",
+          description:
+            "调用 MCP 方法的参数，可以是 JSON 字符串或对象（action=call 时使用，默认 {}）",
         },
       },
       required: ["action", "category"],
@@ -216,8 +224,8 @@ export function createWeComMcpTool() {
       const p = params as WeComToolsParams;
       console.log(
         `[mcp] execute: action=${p.action}, category=${p.category}` +
-        (p.method ? `, method=${p.method}` : "") +
-        (p.args ? `, args=${typeof p.args === "string" ? p.args : JSON.stringify(p.args)}` : ""),
+          (p.method ? `, method=${p.method}` : "") +
+          (p.args ? `, args=${typeof p.args === "string" ? p.args : JSON.stringify(p.args)}` : ""),
       );
       try {
         let result: ReturnType<typeof textResult>;
@@ -239,15 +247,15 @@ export function createWeComMcpTool() {
         }
         console.log(
           `[mcp] execute: action=${p.action}, category=${p.category}` +
-          (p.method ? `, method=${p.method}` : "") +
-          ` → 响应长度=${result.content[0].text.length} chars`,
+            (p.method ? `, method=${p.method}` : "") +
+            ` → 响应长度=${result.content[0].text.length} chars`,
         );
         return result;
       } catch (err) {
         console.error(
           `[mcp] execute: action=${p.action}, category=${p.category}` +
-          (p.method ? `, method=${p.method}` : "") +
-          ` → 异常: ${err instanceof Error ? err.message : String(err)}`,
+            (p.method ? `, method=${p.method}` : "") +
+            ` → 异常: ${err instanceof Error ? err.message : String(err)}`,
         );
         return errorResult(err);
       }

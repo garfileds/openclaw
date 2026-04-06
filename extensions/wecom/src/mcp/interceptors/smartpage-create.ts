@@ -1,29 +1,29 @@
 /**
- * smartpage_create 请求拦截器
+ * smartpage_create Request Interceptor
  *
- * 核心逻辑：
- * smartpage_create 的 pages 数组中，每个 page 可能包含 page_filepath 字段
- * （指向本地 markdown 文件），用于避免在命令行传递大段文本内容。
- * 本拦截器在 beforeCall 阶段遍历 pages 数组，逐个读取 page_filepath
- * 指向的本地文件内容，填入 page_content 字段，并移除 page_filepath。
+ * Core logic:
+ * The pages array in smartpage_create may contain a page_filepath field per page
+ * (pointing to a local markdown file), to avoid passing large text content via command line.
+ * This interceptor traverses the pages array during beforeCall, reads each page_filepath's
+ * local file content, fills it into page_content, and removes page_filepath.
  *
- * 入参约定：
+ * Input convention:
  *   wecom_mcp call doc smartpage_create '{
- *     "title": "主页标题",
+ *     "title": "Main page title",
  *     "pages": [
- *       {"page_title": "页面1", "page_filepath": "/tmp/page1.md", "content_type": "markdown"},
- *       {"page_title": "页面2", "page_filepath": "/tmp/page2.md", "content_type": "markdown"}
+ *       {"page_title": "Page 1", "page_filepath": "/tmp/page1.md", "content_type": "markdown"},
+ *       {"page_title": "Page 2", "page_filepath": "/tmp/page2.md", "content_type": "markdown"}
  *     ]
  *   }'
  *
- * 拦截器行为：
- *   1. 检测 args.pages 数组
- *   2. 校验文件大小：单文件不超过 10MB，所有文件总计不超过 20MB
- *   3. 遍历每个 page，若存在 page_filepath 则读取本地文件内容
- *   4. 将文件内容填入 page_content 字段，移除 page_filepath
- *   5. 返回修改后的完整 args
+ * Interceptor behavior:
+ *   1. Detect args.pages array
+ *   2. Validate file size: single file must not exceed 10MB, total must not exceed 20MB
+ *   3. Traverse each page; if page_filepath exists, read local file content
+ *   4. Fill file content into page_content field, remove page_filepath
+ *   5. Return modified complete args
  *
- * 传给 MCP Server 的格式：
+ * Format sent to MCP Server:
  *   { "title": "...", "pages": [{"page_title": "...", "page_content": "...", "content_type": "..."}] }
  */
 
@@ -31,28 +31,26 @@ import * as fs from "node:fs/promises";
 import type { CallInterceptor, CallContext, BeforeCallOptions } from "./types.js";
 
 // ============================================================================
-// 常量
+// Constants
 // ============================================================================
 
-/** 单个 page_filepath 文件大小上限：10MB */
+/** Max file size per page_filepath: 10MB */
 const MAX_SINGLE_FILE_SIZE = 10 * 1024 * 1024;
-/** 所有 page_filepath 文件总大小上限：20MB */
+/** Max total file size for all page_filepaths: 20MB */
 const MAX_TOTAL_FILE_SIZE = 20 * 1024 * 1024;
 
 // ============================================================================
-// 内部辅助函数
+// Internal Helper Functions
 // ============================================================================
 
 /**
- * 校验所有 page_filepath 的文件大小
+ * Validate file sizes of all page_filepaths
  *
- * 使用 fs.stat 在读取文件内容之前检查大小，避免超大文件被加载到内存。
- * - 单文件 > 10MB → 报错
- * - 所有文件累计 > 20MB → 报错
+ * Uses fs.stat to check sizes before reading file content, avoiding loading oversized files into memory.
+ * - Single file > 10MB → error
+ * - Cumulative total > 20MB → error
  */
-async function validateFileSize(
-  pages: Record<string, unknown>[],
-): Promise<void> {
+async function validateFileSize(pages: Record<string, unknown>[]): Promise<void> {
   let totalSize = 0;
 
   for (let i = 0; i < pages.length; i++) {
@@ -63,14 +61,14 @@ async function validateFileSize(
     try {
       stat = await fs.stat(filePath);
     } catch (err) {
-      // stat 失败不在这里处理，留给后续 readFile 阶段抛出更详细的错误
+      // stat failure not handled here; left for the subsequent readFile phase to throw a more detailed error
       continue;
     }
 
     if (stat.size > MAX_SINGLE_FILE_SIZE) {
       console.error(
         `[mcp] smartpage_create: pages[${i}] 文件 "${filePath}" ` +
-        `大小 ${(stat.size / 1024 / 1024).toFixed(1)}MB 超过单文件上限 10MB`,
+          `大小 ${(stat.size / 1024 / 1024).toFixed(1)}MB 超过单文件上限 10MB`,
       );
       throw new Error("内容大小超出限制，无法创建");
     }
@@ -79,7 +77,7 @@ async function validateFileSize(
     if (totalSize > MAX_TOTAL_FILE_SIZE) {
       console.error(
         `[mcp] smartpage_create: 累计文件大小 ${(totalSize / 1024 / 1024).toFixed(1)}MB ` +
-        `超过总上限 20MB（在 pages[${i}] "${filePath}" 处超出）`,
+          `超过总上限 20MB（在 pages[${i}] "${filePath}" 处超出）`,
       );
       throw new Error("内容大小超出限制，无法创建");
     }
@@ -92,22 +90,22 @@ async function validateFileSize(
   }
 }
 
-/** 异步解析 pages 中的 page_filepath，返回 BeforeCallOptions */
+/** Asynchronously resolve page_filepath in pages, return BeforeCallOptions */
 async function resolvePages(
   ctx: CallContext,
   pages: Record<string, unknown>[],
 ): Promise<BeforeCallOptions> {
   console.log(`[mcp] smartpage_create: 开始解析 ${pages.length} 个 page 的 page_filepath`);
 
-  // 阶段 1：文件大小校验（stat 阶段，不读内容）
+  // Phase 1: File size validation (stat phase, no content reading)
   await validateFileSize(pages);
 
-  // 阶段 2：读取文件内容
+  // Phase 2: Read file content
   const resolvedPages = await Promise.all(
     pages.map(async (page: Record<string, unknown>, index: number) => {
       const filePath = page.page_filepath;
       if (typeof filePath !== "string" || !filePath) {
-        // 该 page 没有 page_filepath，保留原样（可能已有 page_content）
+        // This page has no page_filepath; keep as-is (may already have page_content)
         return page;
       }
 
@@ -124,7 +122,7 @@ async function resolvePages(
         `[mcp] smartpage_create: pages[${index}] 读取成功 "${filePath}" (${fileContent.length} chars)`,
       );
 
-      // 构造新的 page 对象：填入 page_content，移除 page_filepath
+      // Build new page object: fill in page_content, remove page_filepath
       const { page_filepath: _, ...rest } = page;
       return { ...rest, page_content: fileContent };
     }),
@@ -132,7 +130,7 @@ async function resolvePages(
 
   console.log(`[mcp] smartpage_create: 所有 page_filepath 解析完成`);
 
-  // 返回修改后的完整 args
+  // Return modified complete args
   return {
     args: {
       ...ctx.args,
@@ -142,29 +140,29 @@ async function resolvePages(
 }
 
 // ============================================================================
-// 拦截器实现
+// Interceptor Implementation
 // ============================================================================
 
 export const smartpageCreateInterceptor: CallInterceptor = {
   name: "smartpage-create",
 
-  /** 仅对 doc 品类的 smartpage_create 方法生效 */
+  /** Only applies to doc category's smartpage_create method */
   match: (ctx: CallContext) => ctx.category === "doc" && ctx.method === "smartpage_create",
 
-  /** 遍历 pages 数组，逐个读取 page_filepath 填入 page_content */
+  /** Traverse pages array, read each page_filepath and fill into page_content */
   beforeCall(ctx: CallContext) {
     const pages = ctx.args.pages;
     if (!Array.isArray(pages) || pages.length === 0) {
-      // 没有 pages 数组，不做拦截
+      // No pages array, don't intercept
       return undefined;
     }
 
-    // 检查是否有任何 page 包含 page_filepath
+    // Check if any page contains page_filepath
     const hasFilePath = pages.some(
       (p: Record<string, unknown>) => typeof p.page_filepath === "string" && p.page_filepath,
     );
     if (!hasFilePath) {
-      // 所有 page 都没有 page_filepath（可能直接传了 page_content），不做拦截
+      // All pages lack page_filepath (may have page_content directly), don't intercept
       return undefined;
     }
 

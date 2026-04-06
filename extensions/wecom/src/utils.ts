@@ -1,27 +1,32 @@
 /**
- * 企业微信公共工具函数
+ * WeCom common utility functions
  */
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
-import { DEFAULT_ACCOUNT_ID } from "./openclaw-compat.js";
 import { CHANNEL_ID } from "./const.js";
+import { DEFAULT_ACCOUNT_ID } from "./openclaw-compat.js";
 import type { ResolvedAgentAccount } from "./types/account.js";
-import type { WecomAgentConfig, WecomNetworkConfig, WecomMediaConfig, WecomDynamicAgentsConfig } from "./types/config.js";
+import type {
+  WecomAgentConfig,
+  WecomNetworkConfig,
+  WecomMediaConfig,
+  WecomDynamicAgentsConfig,
+} from "./types/config.js";
 
 // ============================================================================
-// 配置类型定义
+// Configuration Type Definitions
 // ============================================================================
 
 /**
- * 企业微信群组配置
+ * WeCom group configuration
  */
 export interface WeComGroupConfig {
-  /** 群组内发送者白名单（仅列表中的成员消息会被处理） */
+  /** Sender allowlist within the group (only messages from listed members will be processed) */
   allowFrom?: Array<string | number>;
 }
 
 /**
- * 企业微信配置类型
+ * WeCom configuration type
  */
 export interface WeComConfig {
   enabled?: boolean;
@@ -31,43 +36,43 @@ export interface WeComConfig {
   name?: string;
   allowFrom?: Array<string | number>;
   dmPolicy?: "open" | "allowlist" | "pairing" | "disabled";
-  /** 群组访问策略："open" = 允许所有群组（默认），"allowlist" = 仅允许 groupAllowFrom 中的群组，"disabled" = 禁用群组消息 */
+  /** Group access policy: "open" = allow all groups (default), "allowlist" = only allow groups in groupAllowFrom, "disabled" = disable group messages */
   groupPolicy?: "open" | "allowlist" | "disabled";
-  /** 群组白名单（仅 groupPolicy="allowlist" 时生效） */
+  /** Group allowlist (only effective when groupPolicy="allowlist") */
   groupAllowFrom?: Array<string | number>;
-  /** 每个群组的详细配置（如群组内发送者白名单） */
+  /** Detailed configuration for each group (e.g. per-group sender allowlist) */
   groups?: Record<string, WeComGroupConfig>;
-  /** 是否发送"思考中"消息，默认为 true */
+  /** Whether to send "thinking" messages, defaults to true */
   sendThinkingMessage?: boolean;
-  /** 额外允许访问的本地媒体路径白名单（支持 ~ 表示 home 目录），如 ["~/Downloads", "~/Documents"] */
+  /** Additional local media path allowlist (supports ~ for home directory), e.g. ["~/Downloads", "~/Documents"] */
   mediaLocalRoots?: string[];
-  /** Agent 模式配置（自建应用） */
+  /** Agent mode configuration (self-built app) */
   agent?: WecomAgentConfig;
-  /** 网络配置 */
+  /** Network configuration */
   network?: WecomNetworkConfig;
-  /** 媒体处理配置 */
+  /** Media processing configuration */
   media?: WecomMediaConfig;
-  /** 动态 Agent 配置 */
+  /** Dynamic Agent configuration */
   dynamicAgents?: WecomDynamicAgentsConfig;
 
-  // ── Webhook 模式扩展字段 ──────────────────────────────────────────
-  /** 连接模式：webhook | websocket（默认 websocket） */
+  // ── Webhook mode extension fields ──────────────────────────────────
+  /** Connection mode: webhook | websocket (default: websocket) */
   connectionMode?: "webhook" | "websocket";
-  /** Webhook 验证 token */
+  /** Webhook verification token */
   token?: string;
-  /** AES 加密密钥（43 字符 Base64） */
+  /** AES encryption key (43-character Base64) */
   encodingAESKey?: string;
-  /** 接收方 ID */
+  /** Receiver ID */
   receiveId?: string;
-  /** enter_chat 欢迎消息 */
+  /** enter_chat welcome message */
   welcomeText?: string;
-  /** 流式占位符提示内容 */
+  /** Streaming placeholder prompt content */
   streamPlaceholderContent?: string;
 }
 
 /**
- * 单个企业微信账号的配置类型（用于 accounts 字段下的每个账号）。
- * 与 WeComConfig 字段完全一致，账号级字段会覆盖顶层同名字段。
+ * Configuration type for a single WeCom account (used under the accounts field).
+ * Fields are identical to WeComConfig; account-level fields override top-level fields with the same name.
  */
 export type WeComAccountConfig = Partial<WeComConfig>;
 
@@ -80,19 +85,19 @@ export interface ResolvedWeComAccount {
   websocketUrl: string;
   botId: string;
   secret: string;
-  /** 是否发送"思考中"消息，默认为 true */
+  /** Whether to send "thinking" messages, defaults to true */
   sendThinkingMessage: boolean;
   config: WeComConfig;
-  /** Agent 模式能力（自建应用） */
+  /** Agent mode capabilities (self-built app) */
   agent?: ResolvedAgentAccount;
-  /** Webhook 模式配置 */
+  /** Webhook mode configuration */
   token?: string;
   encodingAESKey?: string;
-  receiveId?: string,
+  receiveId?: string;
 }
 
 /**
- * 解析企业微信账户配置
+ * Resolves WeCom account configuration
  */
 export function resolveWeComAccount(cfg: OpenClawConfig): ResolvedWeComAccount {
   const wecomConfig = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComConfig;
@@ -110,7 +115,7 @@ export function resolveWeComAccount(cfg: OpenClawConfig): ResolvedWeComAccount {
 }
 
 /**
- * 设置企业微信账户配置
+ * Sets WeCom account configuration
  */
 export function setWeComAccount(
   cfg: OpenClawConfig,
@@ -123,19 +128,18 @@ export function setWeComAccount(
     secret: account.secret ?? existing?.secret ?? "",
     allowFrom: account.allowFrom ?? existing?.allowFrom,
     dmPolicy: account.dmPolicy ?? existing?.dmPolicy,
-    // 以下字段仅在已有配置值或显式传入时才写入，onboarding 时不主动生成
+    // The following fields are only written when an existing config value exists or is explicitly provided;
+    // they are not proactively generated during onboarding
     ...(account.websocketUrl || existing?.websocketUrl
       ? { websocketUrl: account.websocketUrl ?? existing?.websocketUrl }
       : {}),
-    ...(account.name || existing?.name
-      ? { name: account.name ?? existing?.name }
-      : {}),
+    ...(account.name || existing?.name ? { name: account.name ?? existing?.name } : {}),
     ...(account.sendThinkingMessage !== undefined || existing?.sendThinkingMessage !== undefined
       ? { sendThinkingMessage: account.sendThinkingMessage ?? existing?.sendThinkingMessage }
       : {}),
   };
 
-return {
+  return {
     ...cfg,
     channels: {
       ...cfg.channels,
@@ -145,11 +149,11 @@ return {
 }
 
 /**
- * 解析出口代理 URL（对齐原版 resolveWecomEgressProxyUrl）
+ * Resolves the egress proxy URL (aligned with the original resolveWecomEgressProxyUrl)
  *
- * 优先级：
+ * Priority:
  * 1. config.channels.wecom.network.egressProxyUrl
- * 2. 环境变量：OPENCLAW_WECOM_EGRESS_PROXY_URL → WECOM_EGRESS_PROXY_URL → HTTPS_PROXY → ALL_PROXY → HTTP_PROXY
+ * 2. Environment variables: OPENCLAW_WECOM_EGRESS_PROXY_URL -> WECOM_EGRESS_PROXY_URL -> HTTPS_PROXY -> ALL_PROXY -> HTTP_PROXY
  */
 export function resolveWecomEgressProxyUrl(cfg: OpenClawConfig): string | undefined {
   const wecom = (cfg.channels?.[CHANNEL_ID] ?? {}) as WeComConfig;

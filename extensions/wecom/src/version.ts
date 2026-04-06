@@ -3,9 +3,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * 从当前文件位置向上逐级查找 package.json
- * - ts 源码直接运行时（tsx/ts-node）：src/version.ts → 向上 1 级
- * - tsc 编译后运行时：dist/src/version.js → 向上 2 级
+ * Searches upward from the current file location to find package.json
+ * - When running ts source directly (tsx/ts-node): src/version.ts -> 1 level up
+ * - When running tsc-compiled output: dist/src/version.js -> 2 levels up
  */
 const findPackageJson = (): string => {
   let dir = dirname(fileURLToPath(import.meta.url));
@@ -13,13 +13,13 @@ const findPackageJson = (): string => {
     const candidate = resolve(dir, "package.json");
     if (existsSync(candidate)) return candidate;
     const parent = dirname(dir);
-    if (parent === dir) break; // 已到文件系统根目录
+    if (parent === dir) break; // Reached filesystem root
     dir = parent;
   }
-  throw new Error("找不到 package.json");
+  throw new Error("Cannot find package.json");
 };
 
 const pkg = JSON.parse(readFileSync(findPackageJson(), "utf-8")) as { version: string };
 
-/** 插件版本号，运行时从 package.json 读取 */
+/** Plugin version, read from package.json at runtime */
 export const PLUGIN_VERSION: string = pkg.version ?? "";

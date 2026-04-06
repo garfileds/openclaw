@@ -1,8 +1,8 @@
 /**
- * Webhook 辅助函数
+ * Webhook helper functions
  *
- * 从 @mocrane/wecom monitor.ts 迁移的辅助工具函数集合。
- * 包含：文本截断、兜底提示构建、本机路径提取、MIME 推断等。
+ * Utility function collection migrated from @mocrane/wecom monitor.ts.
+ * Includes: text truncation, fallback prompt building, local path extraction, MIME inference, etc.
  */
 
 import crypto from "node:crypto";
@@ -15,13 +15,13 @@ import type {
 } from "./types.js";
 
 // ============================================================================
-// 常量
+// Constants
 // ============================================================================
 
-/** DM 文本最大字节数上限 */
+/** Maximum byte limit for DM text */
 export const STREAM_MAX_DM_BYTES = 200_000;
 
-/** MIME 扩展名映射表 */
+/** MIME extension mapping table */
 export const MIME_BY_EXT: Record<string, string> = {
   png: "image/png",
   jpg: "image/jpeg",
@@ -62,13 +62,13 @@ export const MIME_BY_EXT: Record<string, string> = {
 };
 
 // ============================================================================
-// 文本处理
+// Text processing
 // ============================================================================
 
 /**
- * UTF-8 字节截断（保留尾部，截断头部）
+ * UTF-8 byte truncation (keep tail, truncate head)
  *
- * 对齐原版 truncateUtf8Bytes：保留最后 maxBytes 字节。
+ * Aligned with original truncateUtf8Bytes: keeps the last maxBytes bytes.
  */
 export function truncateUtf8Bytes(text: string, maxBytes: number): string {
   const buf = Buffer.from(text, "utf8");
@@ -78,9 +78,9 @@ export function truncateUtf8Bytes(text: string, maxBytes: number): string {
 }
 
 /**
- * 追加 DM 兜底内容（对齐原版 appendDmContent）
+ * Append DM fallback content (aligned with original appendDmContent)
  *
- * 每次 deliver 时都追加到 dmContent（不受 STREAM_MAX_BYTES 限制，有 DM 上限保护）
+ * Appended to dmContent on every deliver (not limited by STREAM_MAX_BYTES, has DM upper limit protection)
  */
 export function appendDmContent(state: StreamState, text: string): void {
   const next = state.dmContent ? `${state.dmContent}\n\n${text}`.trim() : text.trim();
@@ -88,11 +88,11 @@ export function appendDmContent(state: StreamState, text: string): void {
 }
 
 // ============================================================================
-// 兜底提示
+// Fallback prompts
 // ============================================================================
 
 /**
- * 构建兜底提示文本（对齐原版 buildFallbackPrompt）
+ * Build fallback prompt text (aligned with original buildFallbackPrompt)
  */
 export function buildFallbackPrompt(params: {
   kind: "media" | "timeout" | "error";
@@ -120,11 +120,11 @@ export function buildFallbackPrompt(params: {
 }
 
 // ============================================================================
-// 本机路径提取
+// Local path extraction
 // ============================================================================
 
 /**
- * 从文本中提取本机文件路径（对齐原版 extractLocalFilePathsFromText）
+ * Extract local file paths from text (aligned with original extractLocalFilePathsFromText)
  */
 export function extractLocalFilePathsFromText(text: string): string[] {
   if (!text.trim()) return [];
@@ -142,9 +142,9 @@ export function extractLocalFilePathsFromText(text: string): string[] {
 }
 
 /**
- * 从文本中提取本机图片路径（对齐原版 extractLocalImagePathsFromText）
+ * Extract local image paths from text (aligned with original extractLocalImagePathsFromText)
  *
- * 仅提取 text 中存在且也出现在 mustAlsoAppearIn 中的路径（安全：防止泄漏）
+ * Only extracts paths present in text that also appear in mustAlsoAppearIn (security: prevent leaks)
  */
 export function extractLocalImagePathsFromText(params: {
   text: string;
@@ -166,7 +166,7 @@ export function extractLocalImagePathsFromText(params: {
 }
 
 /**
- * 判断文本是否包含"发送本机文件"的意图（对齐原版 looksLikeSendLocalFileIntent）
+ * Check if text contains "send local file" intent (aligned with original looksLikeSendLocalFileIntent)
  */
 export function looksLikeSendLocalFileIntent(rawBody: string): boolean {
   const t = rawBody.trim();
@@ -175,11 +175,11 @@ export function looksLikeSendLocalFileIntent(rawBody: string): boolean {
 }
 
 // ============================================================================
-// taskKey 与 Agent 配置
+// taskKey and Agent configuration
 // ============================================================================
 
 /**
- * 计算 taskKey（对齐原版 computeTaskKey）
+ * Compute taskKey (aligned with original computeTaskKey)
  */
 export function computeTaskKey(
   target: WecomWebhookTarget,
@@ -192,16 +192,16 @@ export function computeTaskKey(
 }
 
 /**
- * 检查 Agent 凭证是否已配置（对齐原版 resolveAgentAccountOrUndefined 的简化版）
+ * Check if Agent credentials are configured (simplified version of original resolveAgentAccountOrUndefined)
  *
- * 在 webhook 模式下，Agent 凭证直接来自 target.account，不需要复杂的解析
+ * In webhook mode, Agent credentials come directly from target.account, no complex resolution needed
  */
 export function isAgentConfigured(target: WecomWebhookTarget): boolean {
   return Boolean(target.account.agent?.configured);
 }
 
 /**
- * 从路径猜测 content-type
+ * Guess content-type from file path
  */
 export function guessContentTypeFromPath(filePath: string): string | undefined {
   const ext = filePath.split(".").pop()?.toLowerCase();
@@ -210,13 +210,13 @@ export function guessContentTypeFromPath(filePath: string): string | undefined {
 }
 
 // ============================================================================
-// Stream Reply 构建
+// Stream Reply building
 // ============================================================================
 
 /**
- * 从 StreamState 构建最终流式回复（对齐原版 buildStreamReplyFromState）
+ * Build final stream reply from StreamState (aligned with original buildStreamReplyFromState)
  *
- * 包含 images/msg_item，对 content 做 truncateUtf8Bytes。
+ * Includes images/msg_item, applies truncateUtf8Bytes to content.
  */
 export function buildStreamReplyFromState(
   state: StreamState,
@@ -243,30 +243,30 @@ export function buildStreamReplyFromState(
 }
 
 /**
- * 计算 MD5
+ * Compute MD5
  */
 export function computeMd5(data: Buffer | string): string {
   return crypto.createHash("md5").update(data).digest("hex");
 }
 
 // ============================================================================
-// 配置解析
+// Configuration parsing
 // ============================================================================
 
 /**
- * 解析媒体最大字节数（对齐原版 resolveWecomMediaMaxBytes）
+ * Resolve media max bytes (aligned with original resolveWecomMediaMaxBytes)
  */
 export function resolveWecomMediaMaxBytes(cfg: OpenClawConfig): number {
   const val = (cfg.channels?.wecom as any)?.media?.maxBytes;
   if (typeof val === "number" && Number.isFinite(val) && val > 0) return val;
-  return 20 * 1024 * 1024; // 默认 20MB
+  return 20 * 1024 * 1024; // Default 20MB
 }
 
 // ============================================================================
-// 入站消息处理（processInboundMessage）
+// Inbound message processing (processInboundMessage)
 // ============================================================================
 
-/** 入站消息解析结果（对齐原版 InboundResult） */
+/** Inbound message parsing result (aligned with original InboundResult) */
 export type InboundResult = {
   body: string;
   media?: {
@@ -277,16 +277,16 @@ export type InboundResult = {
 };
 
 /**
- * 处理接收消息（对齐原版 processInboundMessage）
+ * Process inbound message (aligned with original processInboundMessage)
  *
- * 解析企业微信传入的消息体：
- * 1. 识别媒体消息（Image/File/Video/Mixed）
- * 2. 如果存在媒体文件，调用 media.ts 进行解密和下载
- * 3. 通过 inferInboundMediaMeta 精确推断 MIME 和文件名
- * 4. 构造统一的 InboundResult 供后续 Agent 处理
+ * Parse the WeCom inbound message body:
+ * 1. Identify media messages (Image/File/Video/Mixed)
+ * 2. If media files exist, call media.ts for decryption and download
+ * 3. Use inferInboundMediaMeta to accurately infer MIME and filename
+ * 4. Build a unified InboundResult for downstream Agent processing
  *
- * @param target Webhook 目标配置
- * @param msg 企业微信原始消息对象
+ * @param target Webhook target configuration
+ * @param msg WeCom raw message object
  */
 export async function processInboundMessage(
   target: WecomWebhookTarget,
@@ -300,7 +300,7 @@ export async function processInboundMessage(
   const maxBytes = resolveWecomMediaMaxBytes(target.config);
   const proxyUrl = resolveWecomEgressProxyUrl(target.config);
 
-  // 图片消息处理
+  // Image message processing
   if (msgtype === "image") {
     const url = String((msg as any).image?.url ?? "").trim();
     const aesKey = globalAesKey || (msg as any).image?.aeskey || "";
@@ -337,7 +337,7 @@ export async function processInboundMessage(
     }
   }
 
-  // 文件消息处理
+  // File message processing
   if (msgtype === "file") {
     const url = String((msg as any).file?.url ?? "").trim();
     const aesKey = globalAesKey || (msg as any).file?.aeskey || "";
@@ -373,7 +373,7 @@ export async function processInboundMessage(
     }
   }
 
-  // 视频消息处理
+  // Video message processing
   if (msgtype === "video") {
     const url = String((msg as any).video?.url ?? "").trim();
     const aesKey = globalAesKey || (msg as any).video?.aeskey || "";
@@ -409,7 +409,7 @@ export async function processInboundMessage(
     }
   }
 
-  // Mixed 消息处理：提取文本 + 第一个媒体
+  // Mixed message processing: extract text + first media
   if (msgtype === "mixed") {
     const items = (msg as any).mixed?.msg_item;
     if (Array.isArray(items)) {
@@ -467,15 +467,15 @@ export async function processInboundMessage(
     }
   }
 
-  // 其他消息类型：使用 buildInboundBody 构建文本表示
+  // Other message types: use buildInboundBody to construct text representation
   return { body: buildInboundBody(msg) };
 }
 
 // ============================================================================
-// processInboundMessage 依赖的辅助函数
+// processInboundMessage dependency helper functions
 // ============================================================================
 
-/** 格式化解密错误信息（对齐原版格式：message + cause） */
+/** Format decryption error message (aligned with original format: message + cause) */
 function formatDecryptError(err: unknown): string {
   if (typeof err === "object" && err) {
     const msg = (err as any).message ?? String(err);
@@ -485,7 +485,7 @@ function formatDecryptError(err: unknown): string {
   return String(err);
 }
 
-/** 从消息中提取显式文件名（对齐原版 pickBotFileName） */
+/** Extract explicit filename from message (aligned with original pickBotFileName) */
 function pickBotFileName(
   msg: WebhookInboundMessage,
   item?: Record<string, any>,
@@ -515,7 +515,7 @@ function resolveInlineFileName(input: unknown): string | undefined {
   return sanitizeInboundFilename(raw);
 }
 
-/** 清理文件名（移除非法字符） */
+/** Sanitize filename (remove illegal characters) */
 function sanitizeInboundFilename(raw?: string): string | undefined {
   const s = String(raw ?? "").trim();
   if (!s) return undefined;
@@ -525,7 +525,7 @@ function sanitizeInboundFilename(raw?: string): string | undefined {
   return sanitized || undefined;
 }
 
-/** 从 URL 中提取文件名 */
+/** Extract filename from URL */
 function extractFileNameFromUrl(rawUrl?: string): string | undefined {
   const s = String(rawUrl ?? "").trim();
   if (!s) return undefined;
@@ -538,13 +538,13 @@ function extractFileNameFromUrl(rawUrl?: string): string | undefined {
   }
 }
 
-/** 检查文件名是否有常见扩展名 */
+/** Check if filename has a common extension */
 function hasLikelyExtension(name?: string): boolean {
   if (!name) return false;
   return /\.[a-z0-9]{1,16}$/i.test(name);
 }
 
-/** 归一化 Content-Type */
+/** Normalize Content-Type */
 function normalizeContentType(raw?: string | null): string | undefined {
   const normalized = String(raw ?? "")
     .trim()
@@ -571,7 +571,7 @@ const EXT_BY_MIME: Record<string, string> = {
   "application/octet-stream": "bin",
 };
 
-/** 从 Content-Type 反推扩展名 */
+/** Guess extension from Content-Type */
 function guessExtensionFromContentType(contentType?: string): string | undefined {
   const normalized = normalizeContentType(contentType);
   if (!normalized) return undefined;
@@ -580,10 +580,10 @@ function guessExtensionFromContentType(contentType?: string): string | undefined
 }
 
 /**
- * 从 Buffer magic bytes 检测 MIME（对齐原版 detectMimeFromBuffer）
+ * Detect MIME from Buffer magic bytes (aligned with original detectMimeFromBuffer)
  *
- * 注意：这是同步版本，用于 inferInboundMediaMeta 中的快速检测。
- * 与 media.ts 中的 async detectMimeFromBuffer 不同，不使用 file-type 库。
+ * Note: This is a synchronous version used for quick detection in inferInboundMediaMeta.
+ * Different from the async detectMimeFromBuffer in media.ts which uses the file-type library.
  */
 function detectMimeFromBufferSync(buffer: Buffer): string | undefined {
   if (!buffer || buffer.length < 4) return undefined;
@@ -692,9 +692,9 @@ function detectMimeFromBufferSync(buffer: Buffer): string | undefined {
 }
 
 /**
- * 推断入站媒体的 MIME 和文件名（对齐原版 inferInboundMediaMeta）
+ * Infer inbound media MIME and filename (aligned with original inferInboundMediaMeta)
  *
- * 优先级链：magic bytes > HTTP header > URL 路径 > 文件名扩展 > 默认值
+ * Priority chain: magic bytes > HTTP header > URL path > filename extension > default value
  */
 function inferInboundMediaMeta(params: {
   kind: "image" | "file";
@@ -740,15 +740,15 @@ function inferInboundMediaMeta(params: {
 }
 
 // ============================================================================
-// 配置解析
+// Configuration parsing
 // ============================================================================
 
 /**
- * 构建 Agent 调度所需的 config（对齐原版 cfgForDispatch 逻辑）
+ * Build config for Agent dispatch (aligned with original cfgForDispatch logic)
  *
- * 关键修改：
- * - tools.deny += "message"（防止 Agent 绕过 Bot 交付）
- * - blockStreamingChunk / blockStreamingCoalesce 使用更小的阈值
+ * Key modifications:
+ * - tools.deny += "message" (prevent Agent from bypassing Bot delivery)
+ * - blockStreamingChunk / blockStreamingCoalesce use smaller thresholds
  */
 export function buildCfgForDispatch(config: OpenClawConfig): OpenClawConfig {
   const baseAgents = (config as any)?.agents ?? {};
@@ -801,9 +801,9 @@ export function buildCfgForDispatch(config: OpenClawConfig): OpenClawConfig {
 }
 
 /**
- * 解析企微 Bot 回调中的发送者 userid（对齐原版 resolveWecomSenderUserId）
+ * Resolve sender userid from WeCom Bot callback (aligned with original resolveWecomSenderUserId)
  *
- * 优先级：from.userid → fromuserid → from_userid → fromUserId
+ * Priority: from.userid → fromuserid → from_userid → fromUserId
  */
 export function resolveWecomSenderUserId(msg: WebhookInboundMessage): string | undefined {
   const direct = msg.from?.userid?.trim();
@@ -814,23 +814,23 @@ export function resolveWecomSenderUserId(msg: WebhookInboundMessage): string | u
 }
 
 // ============================================================================
-// 辅助函数
+// Helper functions
 // ============================================================================
 
 /**
- * 构造入站消息文本内容（对齐原版 buildInboundBody）
+ * Build inbound message text content (aligned with original buildInboundBody)
  *
- * 根据消息类型提取文本表示：
+ * Extracts text representation based on message type:
  * - text → text.content
- * - voice → voice.content 或 "[voice]"
+ * - voice → voice.content or "[voice]"
  * - image → "[image] {url}"
  * - file → "[file] {url}"
  * - video → "[video] {url}"
- * - mixed → 逐项提取拼接
+ * - mixed → extract and concatenate per item
  * - event → "[event] {eventtype}"
  * - stream → "[stream_refresh] {id}"
  *
- * 如果消息包含 quote（引用），追加引用内容。
+ * If the message contains a quote (reference), appends quoted content.
  */
 export function buildInboundBody(msg: WebhookInboundMessage): string {
   let body = "";
@@ -869,7 +869,7 @@ export function buildInboundBody(msg: WebhookInboundMessage): string {
     body = msgtype ? `[${msgtype}]` : "";
   }
 
-  // 引用消息处理
+  // Quote message handling
   const quote = msg.quote;
   if (quote) {
     const quoteText = formatQuote(quote).trim();
@@ -880,7 +880,7 @@ export function buildInboundBody(msg: WebhookInboundMessage): string {
 }
 
 /**
- * 格式化引用消息文本（对齐原版 formatQuote）
+ * Format quoted message text (aligned with original formatQuote)
  */
 export function formatQuote(quote: WebhookInboundQuote): string {
   const type = quote.msgtype ?? "";
@@ -903,7 +903,7 @@ export function formatQuote(quote: WebhookInboundQuote): string {
   return "";
 }
 
-/** 检查消息是否有媒体内容 */
+/** Check if message has media content */
 export function hasMedia(message: WebhookInboundMessage): boolean {
   const type = message.msgtype;
   return (
@@ -913,10 +913,10 @@ export function hasMedia(message: WebhookInboundMessage): boolean {
 }
 
 /**
- * 构造占位符响应（对齐原版 buildStreamPlaceholderReply）
+ * Build placeholder response (aligned with original buildStreamPlaceholderReply)
  *
- * 用于 active_new / queued_new 场景：finish=false，显示占位符文本。
- * 原版规范：第一次回复内容为 "1" 作为最小占位符。
+ * Used for active_new / queued_new scenarios: finish=false, displays placeholder text.
+ * Original spec: first response content is "1" as a minimal placeholder.
  */
 export function buildStreamPlaceholderReply(
   streamId: string,
@@ -934,9 +934,9 @@ export function buildStreamPlaceholderReply(
 }
 
 /**
- * 构造文本占位符响应（对齐原版 buildStreamTextPlaceholderReply）
+ * Build text placeholder response (aligned with original buildStreamTextPlaceholderReply)
  *
- * 用于 merged 场景：finish=false，显示自定义提示（如"已合并排队处理中..."）。
+ * Used for merged scenarios: finish=false, displays custom prompt (e.g. "merged and queued...").
  */
 export function buildStreamTextPlaceholderReply(
   streamId: string,
@@ -953,9 +953,9 @@ export function buildStreamTextPlaceholderReply(
 }
 
 /**
- * 构造流式响应（从 StreamState 构建）
+ * Build stream response (from StreamState)
  *
- * 用于 stream_refresh 和 msgid 去重场景：返回当前累积内容 + finish 标记。
+ * Used for stream_refresh and msgid deduplication scenarios: returns accumulated content + finish flag.
  */
 export function buildStreamResponse(stream: StreamState): Record<string, unknown> {
   const response: Record<string, unknown> = {
@@ -967,7 +967,7 @@ export function buildStreamResponse(stream: StreamState): Record<string, unknown
     },
   };
 
-  // 添加图片附件
+  // Add image attachments
   if (stream.images && stream.images.length > 0) {
     const streamObj = response.stream as Record<string, unknown>;
     streamObj.msg_item = stream.images.map((img) => ({

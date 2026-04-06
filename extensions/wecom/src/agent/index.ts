@@ -1,12 +1,6 @@
 /**
- * WeCom Agent 模块导出
+ * WeCom Agent Module Exports
  */
 
 export { handleAgentWebhook, type AgentWebhookParams } from "./handler.js";
-export {
-    getAccessToken,
-    sendText,
-    uploadMedia,
-    sendMedia,
-    downloadMedia,
-} from "./api-client.js";
+export { getAccessToken, sendText, uploadMedia, sendMedia, downloadMedia } from "./api-client.js";

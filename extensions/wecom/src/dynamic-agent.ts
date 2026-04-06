@@ -1,8 +1,8 @@
 /**
- * **动态 Agent 路由模块**
+ * **Dynamic Agent routing module**
  *
- * 为每个用户/群组自动生成独立的 Agent ID，实现会话隔离。
- * 参考: openclaw-plugin-wecom/dynamic-agent.js
+ * Automatically generates a unique Agent ID for each user/group to achieve session isolation.
+ * Reference: openclaw-plugin-wecom/dynamic-agent.js
  */
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
@@ -15,9 +15,9 @@ export interface DynamicAgentConfig {
 }
 
 /**
- * **getDynamicAgentConfig (读取动态 Agent 配置)**
+ * **getDynamicAgentConfig (read dynamic Agent configuration)**
  *
- * 从全局配置中读取动态 Agent 配置，提供默认值。
+ * Reads the dynamic Agent configuration from the global config, providing default values.
  */
 export function getDynamicAgentConfig(config: OpenClawConfig): DynamicAgentConfig {
   const dynamicAgents = (
@@ -39,10 +39,11 @@ function sanitizeDynamicIdPart(value: string): string {
 }
 
 /**
- * **generateAgentId (生成动态 Agent ID)**
+ * **generateAgentId (generate dynamic Agent ID)**
  *
- * 根据账号 + 聊天类型 + 对端 ID 生成确定性的 Agent ID，避免多账号串会话。
- * 格式: wecom-{accountId}-{type}-{sanitizedPeerId}
+ * Generates a deterministic Agent ID based on account + chat type + peer ID
+ * to prevent cross-account session mixing.
+ * Format: wecom-{accountId}-{type}-{sanitizedPeerId}
  */
 export function generateAgentId(
   chatType: "dm" | "group",
@@ -55,10 +56,10 @@ export function generateAgentId(
 }
 
 /**
- * **shouldUseDynamicAgent (检查是否使用动态 Agent)**
+ * **shouldUseDynamicAgent (check whether to use dynamic Agent)**
  *
- * 根据配置和发送者信息判断是否应使用动态 Agent。
- * 管理员（adminUsers）始终绕过动态路由，使用主 Agent。
+ * Determines whether a dynamic Agent should be used based on config and sender info.
+ * Admins (adminUsers) always bypass dynamic routing and use the main Agent.
  */
 export function shouldUseDynamicAgent(params: {
   chatType: "dm" | "group";
@@ -72,7 +73,7 @@ export function shouldUseDynamicAgent(params: {
     return false;
   }
 
-  // 管理员绕过动态路由
+  // Admins bypass dynamic routing
   const sender = String(senderId).trim().toLowerCase();
   const isAdmin = dynamicConfig.adminUsers.some((admin) => admin.trim().toLowerCase() === sender);
   if (isAdmin) {

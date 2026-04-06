@@ -1,30 +1,30 @@
 /**
- * Webhook Target 管理
+ * Webhook Target management
  *
- * 从 @mocrane/wecom monitor.ts 部分迁移（仅 Webhook Target 相关）。
- * 维护全局已注册 Target 列表，提供注册/注销/查询功能。
+ * Migrated from the @mocrane/wecom monitor.ts implementation (Webhook Target portion only).
+ * Maintains the global list of registered Targets and provides register/unregister/query operations.
  *
- * Target 按路径索引：Map<path, WecomWebhookTarget[]>
- * 同一路径可能注册多个账号（老路径兼容模式），通过签名验证匹配到正确账号。
+ * Targets are indexed by path: Map<path, WecomWebhookTarget[]>
+ * Multiple accounts may be registered under the same path (legacy-path compatibility mode), and signature verification is used to match the correct account.
  */
 
 import type { WecomWebhookTarget } from "./types.js";
 
 // ============================================================================
-// 全局 Target 注册表（按路径索引）
+// Global Target registry (indexed by path)
 // ============================================================================
 
-/** 已注册的 Webhook Target（按路径索引） */
+/** Registered Webhook Targets (indexed by path) */
 const webhookTargets = new Map<string, WecomWebhookTarget[]>();
 
 // ============================================================================
-// 路径工具函数
+// Path helper functions
 // ============================================================================
 
 /**
- * 标准化 Webhook 路径
+ * Normalize a Webhook path
  *
- * 统一格式：以 `/` 开头且不以 `/` 结尾。
+ * Canonical format: starts with `/` and does not end with `/`.
  */
 function normalizeWebhookPath(raw: string): string {
   const trimmed = raw.trim();

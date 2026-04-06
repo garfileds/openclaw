@@ -1,6 +1,6 @@
 /**
- * WeCom Agent Webhook 处理器
- * 处理 XML 格式回调
+ * WeCom Agent Webhook Handler
+ * Processes XML format callbacks
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -36,11 +36,11 @@ function resolveWecomMediaMaxBytes(config: OpenClawConfig): number {
   );
 }
 
-/** 错误提示信息 */
+/** Error help message */
 const ERROR_HELP = "";
 
-// Agent webhook 幂等去重池（防止企微回调重试导致重复回复）
-// 注意：这是进程内内存去重，重启会清空；但足以覆盖企微的短周期重试。
+// Agent webhook idempotent deduplication pool (prevents duplicate replies from WeCom callback retries)
+// Note: This is in-process memory deduplication; it clears on restart but is sufficient to cover WeCom's short-period retries.
 const RECENT_MSGID_TTL_MS = 10 * 60 * 1000;
 const recentAgentMsgIds = new Map<string, number>();
 
@@ -49,7 +49,7 @@ function rememberAgentMsgId(msgId: string): boolean {
   const existing = recentAgentMsgIds.get(msgId);
   if (existing && now - existing < RECENT_MSGID_TTL_MS) return false;
   recentAgentMsgIds.set(msgId, now);
-  // 简单清理：只在写入时做一次线性 prune，避免无界增长
+  // Simple cleanup: perform a linear prune on write to prevent unbounded growth
   for (const [k, ts] of recentAgentMsgIds) {
     if (now - ts >= RECENT_MSGID_TTL_MS) recentAgentMsgIds.delete(k);
   }
@@ -66,7 +66,7 @@ function looksLikeTextFile(buffer: Buffer): boolean {
     const isPrintable = b >= 0x20 && b !== 0x7f;
     if (!isWhitespace && !isPrintable) bad++;
   }
-  // 非可打印字符占比太高，基本可判断为二进制
+  // High ratio of non-printable characters indicates binary content
   return bad / sampleSize <= 0.02;
 }
 
@@ -102,23 +102,24 @@ function buildTextFilePreview(buffer: Buffer, maxChars: number): string | undefi
 }
 
 /**
- * **AgentWebhookParams (Webhook 处理器参数)**
+ * **AgentWebhookParams (Webhook Handler Parameters)**
  *
- * 传递给 Agent Webhook 处理函数的上下文参数集合。
- * @property req Node.js 原始请求对象
- * @property res Node.js 原始响应对象
- * @property agent 解析后的 Agent 账号信息
- * @property config 全局插件配置
- * @property core OpenClaw 插件运行时
- * @property log 可选日志输出函数
- * @property error 可选错误输出函数
+ * Collection of context parameters passed to the Agent Webhook handler function.
+ * @property req Node.js raw request object
+ * @property res Node.js raw response object
+ * @property agent Resolved Agent account information
+ * @property config Global plugin configuration
+ * @property core OpenClaw plugin runtime
+ * @property log Optional log output function
+ * @property error Optional error output function
  */
 export type AgentWebhookParams = {
   req: IncomingMessage;
   res: ServerResponse;
   /**
-   * 上游已完成验签/解密时传入，避免重复协议处理。
-   * 仅用于 POST 消息回调流程。
+   * Passed when upstream has completed signature verification/decryption,
+   * to avoid redundant protocol processing.
+   * Used only in POST message callback flow.
    */
   verifiedPost?: {
     timestamp: string;
@@ -141,10 +142,10 @@ export type AgentInboundProcessDecision = {
 };
 
 /**
- * 仅允许“用户意图消息”进入 AI 会话。
- * - event 回调（如 enter_agent/subscribe）不应触发会话与自动回复
- * - 系统发送者（sys）不应触发会话与自动回复
- * - 缺失发送者时默认丢弃，避免写入异常会话
+ * Only allow "user intent messages" to enter the AI session.
+ * - Event callbacks (e.g., enter_agent/subscribe) should not trigger sessions or auto-replies
+ * - System senders (sys) should not trigger sessions or auto-replies
+ * - Missing sender defaults to discard to avoid writing to invalid sessions
  */
 export function shouldProcessAgentInboundMessage(params: {
   msgType: string;
@@ -196,9 +197,9 @@ function normalizeAgentId(value: unknown): number | undefined {
 }
 
 /**
- * **resolveQueryParams (解析查询参数)**
+ * **resolveQueryParams (Parse Query Parameters)**
  *
- * 辅助函数：从 IncomingMessage 中解析 URL 查询字符串，用于获取签名、时间戳等参数。
+ * Helper function: parses URL query string from IncomingMessage to retrieve signature, timestamp, etc.
  */
 function resolveQueryParams(req: IncomingMessage): URLSearchParams {
   const url = new URL(req.url ?? "/", "http://localhost");
@@ -206,7 +207,7 @@ function resolveQueryParams(req: IncomingMessage): URLSearchParams {
 }
 
 /**
- * 处理消息回调 (POST)
+ * Handle message callback (POST)
  */
 async function handleMessageCallback(params: AgentWebhookParams): Promise<boolean> {
   const { req, res, verifiedPost, agent, config, core, log, error } = params;
@@ -275,7 +276,7 @@ async function handleMessageCallback(params: AgentWebhookParams): Promise<boolea
       `[wecom-agent] ${msgType} from=${fromUser} chatId=${chatId ?? "N/A"} msgId=${msgId ?? "N/A"} content=${preview}`,
     );
 
-    // 先返回 success (Agent 模式使用 API 发送回复，不用被动回复)
+    // Return success first (Agent mode uses API to send replies, no passive reply needed)
     res.statusCode = 200;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.end("success");
@@ -292,7 +293,7 @@ async function handleMessageCallback(params: AgentWebhookParams): Promise<boolea
       return true;
     }
 
-    // 异步处理消息
+    // Process message asynchronously
     processAgentMessage({
       agent,
       config,
@@ -319,15 +320,15 @@ async function handleMessageCallback(params: AgentWebhookParams): Promise<boolea
 }
 
 /**
- * **processAgentMessage (处理 Agent 消息)**
+ * **processAgentMessage (Process Agent Message)**
  *
- * 异步处理解密后的消息内容，并触发 OpenClaw Agent。
- * 流程：
- * 1. 路由解析：根据 userid或群ID 确定 Agent 路由。
- * 2. 媒体处理：如果是图片/文件等，下载资源。
- * 3. 上下文构建：创建 Inbound Context。
- * 4. 会话记录：更新 Session 状态。
- * 5. 调度回复：将 Agent 的响应通过 `api-client` 发送回企业微信。
+ * Asynchronously processes decrypted message content and triggers the OpenClaw Agent.
+ * Flow:
+ * 1. Route resolution: determine Agent route based on userid or group ID.
+ * 2. Media processing: download resources for image/file messages.
+ * 3. Context building: create Inbound Context.
+ * 4. Session recording: update Session state.
+ * 5. Reply dispatch: send Agent's response back to WeCom via `api-client`.
  */
 async function processAgentMessage(params: {
   agent: ResolvedAgentAccount;
@@ -347,7 +348,7 @@ async function processAgentMessage(params: {
   const peerId = isGroup ? chatId! : fromUser;
   const mediaMaxBytes = resolveWecomMediaMaxBytes(config);
 
-  // 处理媒体文件
+  // Process media files
   const attachments: any[] = []; // TODO: define specific type
   let finalContent = content;
   let mediaPath: string | undefined;
@@ -367,7 +368,7 @@ async function processAgentMessage(params: {
         const originalFileName = (xmlFileName || headerFileName || `${mediaId}.bin`).trim();
         const heuristic = analyzeTextHeuristic(buffer);
 
-        // 推断文件名后缀
+        // Infer file extension
         const extMap: Record<string, string> = {
           "image/jpeg": "jpg",
           "image/png": "png",
@@ -397,7 +398,7 @@ async function processAgentMessage(params: {
             `headHex="${previewHex(buffer)}"`,
         );
 
-        // 使用 Core SDK 保存媒体文件
+        // Save media file using Core SDK
         const saved = await core.channel.media.saveMediaBuffer(
           buffer,
           normalizedContentType,
@@ -410,14 +411,14 @@ async function processAgentMessage(params: {
         mediaPath = saved.path;
         mediaType = normalizedContentType;
 
-        // 构建附件
+        // Build attachment
         attachments.push({
           name: originalFileName,
           mimeType: normalizedContentType,
-          url: pathToFileURL(saved.path).href, // 使用跨平台安全的文件 URL
+          url: pathToFileURL(saved.path).href, // Use cross-platform safe file URL
         });
 
-        // 更新文本提示
+        // Update text prompt
         if (textPreview) {
           finalContent = [
             content,
@@ -463,7 +464,7 @@ async function processAgentMessage(params: {
     }
   }
 
-  // 解析路由
+  // Resolve routing
   const route = core.channel.routing.resolveAgentRoute({
     cfg: config,
     channel: "wecom",
@@ -484,14 +485,14 @@ async function processAgentMessage(params: {
     error: (msg) => error?.(msg.replace(/^\[dynamic-routing\]/, "[wecom-agent]")),
   });
 
-  // 应用动态路由结果
+  // Apply dynamic routing result
   if (routingResult.routeModified) {
     route.agentId = routingResult.finalAgentId;
     route.sessionKey = routingResult.finalSessionKey;
   }
   // ===== 动态 Agent 路由处理结束 =====
 
-  // 构建上下文
+  // Build context
   const fromLabel = isGroup ? `group:${peerId}` : `user:${fromUser}`;
   const storePath = core.channel.session.resolveStorePath(config.session?.store, {
     agentId: route.agentId,
@@ -599,7 +600,7 @@ async function processAgentMessage(params: {
           }
           if (!mediaDirectivePaths.includes(p)) mediaDirectivePaths.push(p);
         }
-        // 从回复文本中移除 MEDIA: 指令行
+        // Remove MEDIA: directive lines from the reply text
         if (mediaDirectivePaths.length > 0) {
           text = text
             .replace(/^MEDIA:\s*`?[^\n`]+?`?\s*$/gm, "")
@@ -607,7 +608,7 @@ async function processAgentMessage(params: {
             .trim();
         }
 
-        // ── 2. 合并所有媒体 URL ──
+        // ── 2. Merge all media URLs ──
         const mediaUrls = Array.from(
           new Set([
             ...(payload.mediaUrls || []),
@@ -705,7 +706,7 @@ async function processAgentMessage(params: {
                 ? `${err.message}${err.cause ? ` (cause: ${String(err.cause)})` : ""}`
                 : String(err);
             error?.(`[wecom-agent] media send failed: ${mediaPath}: ${message}`);
-            // 降级：发文本通知用户
+            // Fallback: send text notification to user
             try {
               await sendText({
                 agent,

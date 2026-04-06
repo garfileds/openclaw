@@ -1,36 +1,34 @@
 /**
- * Webhook HTTP 请求处理
+ * Webhook HTTP request handling
  *
- * 从 @mocrane/wecom monitor.ts handleWecomWebhookRequest 部分迁移 + 重构。
- * 负责：
- * 1. GET/POST 请求分流
- * 2. 签名验证（调用 crypto 模块）
- * 3. 消息解密
- * 4. 按消息类型分发到 monitor 层
+ * Migrated from @mocrane/wecom monitor.ts handleWecomWebhookRequest + refactored.
+ * Responsibilities:
+ * 1. GET/POST request routing
+ * 2. Signature verification (via crypto module)
+ * 3. Message decryption
+ * 4. Dispatch by message type to the monitor layer
  */
 
 import crypto from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { getRegisteredTargets, getWebhookTargetsMap, parseWebhookPath } from "./target.js";
-import type { WecomWebhookTarget, WebhookInboundMessage } from "./types.js";
+import { WecomCrypto } from "@wecom/aibot-node-sdk";
 import { resolveWecomEgressProxyUrl } from "../utils.js";
+import { resolveWecomSenderUserId } from "./helpers.js";
 import {
   handleInboundMessage,
   handleStreamRefresh,
   handleEnterChat,
   handleTemplateCardEvent,
 } from "./monitor.js";
+import { getRegisteredTargets, getWebhookTargetsMap, parseWebhookPath } from "./target.js";
 import { hasActiveTargets } from "./target.js";
-import {
-  resolveWecomSenderUserId,
-} from "./helpers.js";
-import { WecomCrypto } from "@wecom/aibot-node-sdk";
+import type { WecomWebhookTarget, WebhookInboundMessage } from "./types.js";
 
 // ============================================================================
-// 辅助函数
+// Helper functions
 // ============================================================================
 
-/** 解析 URL 查询参数 */
+/** Parse URL query parameters */
 function parseQuery(url: string): Record<string, string> {
   const idx = url.indexOf("?");
   if (idx < 0) return {};
@@ -43,27 +41,29 @@ function parseQuery(url: string): Record<string, string> {
 }
 
 /**
- * 从查询参数中提取签名字段
+ * Extract signature field from query parameters
  *
- * 企微不同场景下签名参数名不一致，按优先级依次尝试：
- * msg_signature → msgsignature → signature
+ * WeCom uses different signature parameter names in different scenarios;
+ * try in priority order: msg_signature → msgsignature → signature
  */
 function resolveSignatureParam(query: Record<string, string>): string {
   return query.msg_signature ?? query.msgsignature ?? query.signature ?? "";
 }
 
-
 /**
- * 判断入站消息是否应该被处理（对齐原版 shouldProcessBotInboundMessage）
+ * Determine if an inbound message should be processed (aligned with original shouldProcessBotInboundMessage)
  *
- * 仅允许"真实用户消息"进入 Bot 会话：
- * - 发送者缺失 → 丢弃（避免 unknown 会话串会话）
- * - 发送者是 sys → 丢弃（避免系统回调触发 AI 自动回复）
- * - 群消息缺失 chatid → 丢弃（避免 group:unknown 串群）
+ * Only allow "real user messages" into Bot sessions:
+ * - Missing sender → discard (avoid unknown session mixing)
+ * - Sender is sys → discard (avoid system callbacks triggering AI auto-replies)
+ * - Group message missing chatid → discard (avoid group:unknown mixing)
  */
-function shouldProcessBotInboundMessage(
-  msg: WebhookInboundMessage,
-): { shouldProcess: boolean; reason: string; senderUserId?: string; chatId?: string } {
+function shouldProcessBotInboundMessage(msg: WebhookInboundMessage): {
+  shouldProcess: boolean;
+  reason: string;
+  senderUserId?: string;
+  chatId?: string;
+} {
   const senderUserId = resolveWecomSenderUserId(msg)?.trim();
 
   if (!senderUserId) {
@@ -73,8 +73,10 @@ function shouldProcessBotInboundMessage(
     return { shouldProcess: false, reason: "system_sender" };
   }
 
-  // 企微 Bot 回调中 chattype 是扁平字段（非嵌套在 chat_info 内）
-  const chatType = String(msg.chattype ?? "").trim().toLowerCase();
+  // In WeCom Bot callbacks, chattype is a flat field (not nested inside chat_info)
+  const chatType = String(msg.chattype ?? "")
+    .trim()
+    .toLowerCase();
   if (chatType === "group") {
     const chatId = msg.chatid?.trim();
     if (!chatId) {
@@ -87,35 +89,35 @@ function shouldProcessBotInboundMessage(
 }
 
 /**
- * 从 Target 配置中提取预期的 Bot Identity 集合
+ * Extract expected Bot Identity set from Target config
  *
- * 用于 aibotid 校验：即使签名匹配，也要确认消息来自预期的 Bot。
+ * Used for aibotid verification: even if signature matches, confirm the message is from the expected Bot.
  *
- * 配置来源（对齐用户 YAML 配置）：
- * - 单账号模式：channels.wecom.botId
- * - 多账号模式：channels.wecom.accounts.xxx.botId
+ * Config sources (aligned with user YAML config):
+ * - Single-account mode: channels.wecom.botId
+ * - Multi-account mode: channels.wecom.accounts.xxx.botId
  *
- * 解析后的 botId 已在 account.botId 中，直接读取即可。
- * 同时兼容 config 中可能存在的 aibotid（原版字段名）。
+ * The resolved botId is already in account.botId; read it directly.
+ * Also supports the legacy aibotid field name from config as fallback.
  */
 function resolveBotIdentitySet(target: WecomWebhookTarget): Set<string> {
   const ids = new Set<string>();
-  // account.botId — 从 YAML 配置中解析出的 botId（单账号/多账号均可）
+  // account.botId — botId resolved from YAML config (single-account/multi-account)
   const botId = target.account.botId?.trim();
   if (botId) ids.add(botId);
-  // config.botId — 与 account.botId 相同来源（兜底）
+  // config.botId — same source as account.botId (fallback)
   const configBotId = target.account.config.botId?.trim();
   if (configBotId) ids.add(configBotId);
   return ids;
 }
 
-/** POST body 最大允许字节数 (1 MB) */
+/** Maximum allowed POST body bytes (1 MB) */
 const MAX_BODY_BYTES = 1024 * 1024;
 
 /**
- * 读取 HTTP 请求 body（带大小限制保护）
+ * Read HTTP request body (with size limit protection)
  *
- * 超过 maxBytes 时会主动销毁请求并拒绝，防止大包攻击。
+ * Actively destroys the request and rejects when exceeding maxBytes to prevent large payload attacks.
  */
 function readBody(
   req: IncomingMessage,
@@ -147,7 +149,7 @@ function readBody(
   });
 }
 
-/** 构造加密 JSON 响应（返回对象，不做 stringify） */
+/** Build an encrypted JSON response (returns object, does not stringify) */
 function encryptResponse(
   target: WecomWebhookTarget,
   responseData: Record<string, unknown>,
@@ -155,40 +157,44 @@ function encryptResponse(
   nonce: string,
 ): { encrypt: string; msgsignature: string; timestamp: string; nonce: string } {
   const plaintext = JSON.stringify(responseData);
-  const wc = new WecomCrypto(target.account.token, target.account.encodingAESKey, target.account.receiveId);
+  const wc = new WecomCrypto(
+    target.account.token,
+    target.account.encodingAESKey,
+    target.account.receiveId,
+  );
   const { encrypt, signature } = wc.encrypt(plaintext, timestamp, nonce);
- 
+
   return { encrypt, msgsignature: signature, timestamp, nonce };
 }
 
-/** 发送 JSON 响应 (Content-Type: application/json) */
+/** Send a JSON response (Content-Type: application/json) */
 function sendJson(res: ServerResponse, statusCode: number, data: unknown): void {
   res.writeHead(statusCode, { "Content-Type": "application/json" });
   res.end(JSON.stringify(data));
 }
 
 /**
- * 发送加密回复响应 (Content-Type: text/plain)
+ * Send an encrypted reply response (Content-Type: text/plain)
  *
- * 企微官方参考实现要求加密 JSON 以 text/plain 返回。
+ * WeCom official reference implementation requires encrypted JSON to be returned as text/plain.
  */
 function sendEncryptedReply(res: ServerResponse, data: unknown): void {
   res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8" });
   res.end(JSON.stringify(data));
 }
 
-/** 发送纯文本响应 */
+/** Send a plain text response */
 function sendText(res: ServerResponse, statusCode: number, text: string): void {
   res.writeHead(statusCode, { "Content-Type": "text/plain charset=utf-8" });
   res.end(text);
 }
 
 // ============================================================================
-// 路径解析
+// Path resolution
 // ============================================================================
 
 /**
- * 标准化 Webhook 路径（不含 query string）
+ * Normalize webhook path (without query string)
  */
 function normalizeRequestPath(url: string): string {
   const idx = url.indexOf("?");
@@ -200,7 +206,7 @@ function normalizeRequestPath(url: string): string {
   return withSlash;
 }
 
-/** 按 accountId 去重 Target 列表（同一 account 注册多条路径时只保留第一个） */
+/** Deduplicate Target list by accountId (keep only the first when the same account registers multiple paths) */
 function deduplicateByAccountId(targets: WecomWebhookTarget[]): WecomWebhookTarget[] {
   const seen = new Set<string>();
   const result: WecomWebhookTarget[] = [];
@@ -214,24 +220,24 @@ function deduplicateByAccountId(targets: WecomWebhookTarget[]): WecomWebhookTarg
 }
 
 // ============================================================================
-// 多账号签名匹配
+// Multi-account signature matching
 // ============================================================================
 
-/** 签名匹配结果 */
+/** Signature match result */
 type MatchResult =
   | { status: "matched"; target: WecomWebhookTarget }
   | { status: "not_found"; candidateAccountIds: string[] }
   | { status: "conflict"; candidateAccountIds: string[] };
 
 /**
- * 从已注册的 Target 中匹配签名
+ * Find a matching Target from registered ones by signature
  *
- * 匹配策略：
- * 1. 如果路径中有 accountId，优先精确匹配
- * 2. 用 filter 收集所有签名匹配的 Target
- * 3. 检查冲突：0 个 = not_found，1 个 = matched，>1 个 = conflict
+ * Matching strategy:
+ * 1. If the path contains an accountId, try exact match first
+ * 2. Use filter to collect all Targets with matching signatures
+ * 3. Check for conflicts: 0 = not_found, 1 = matched, >1 = conflict
  *
- * 与原版保持一致：检查 target.account.token 存在性，防止空 token 的误匹配。
+ * Consistent with the original: check target.account.token existence to prevent false matches with empty tokens.
  */
 function findMatchingTarget(
   requestPath: string,
@@ -241,80 +247,73 @@ function findMatchingTarget(
   encrypt: string,
   pathAccountId?: string,
 ): MatchResult {
-  // 收集所有候选 Target（路径匹配 + 全局兜底）
+  // Collect all candidate Targets (path match + global fallback)
   const targetsMap = getWebhookTargetsMap();
   const normalizedPath = normalizeRequestPath(requestPath);
   const pathTargets = targetsMap.get(normalizedPath);
 
-  // 如果路径中有 accountId，优先精确匹配
+  // If the path contains an accountId, try exact match first
   if (pathAccountId && pathTargets) {
-    const byAccountId = pathTargets.find(
-      (t) => t.account.accountId === pathAccountId,
-    );
+    const byAccountId = pathTargets.find((t) => t.account.accountId === pathAccountId);
     if (byAccountId?.account?.token) {
-      const wc = new WecomCrypto(byAccountId.account.token, byAccountId.account.encodingAESKey, byAccountId.account.receiveId);
-      const ok = wc.verifySignature(
-        signature,
-        timestamp,
-        nonce,
-        encrypt,
-        );
+      const wc = new WecomCrypto(
+        byAccountId.account.token,
+        byAccountId.account.encodingAESKey,
+        byAccountId.account.receiveId,
+      );
+      const ok = wc.verifySignature(signature, timestamp, nonce, encrypt);
       if (ok) return { status: "matched", target: byAccountId };
     }
   }
 
-  // 收集候选列表（路径匹配优先，否则全局遍历）
-  const candidates = (pathTargets && pathTargets.length > 0)
-    ? pathTargets
-    : getRegisteredTargets();
+  // Collect candidate list (path match preferred, otherwise global traversal)
+  const candidates = pathTargets && pathTargets.length > 0 ? pathTargets : getRegisteredTargets();
 
-  // filter 语义：收集所有签名匹配的 Target
-  const signatureMatches = candidates.filter(
-    (target) => {
-      if (!target?.account?.token) return false;
-      const wc = new WecomCrypto(target.account.token, target.account.encodingAESKey, target.account.receiveId);
-      return wc.verifySignature(
-        signature,
-        timestamp,
-        nonce,
-        encrypt,
-      );
-    }
-  );
+  // Filter semantics: collect all Targets with matching signatures
+  const signatureMatches = candidates.filter((target) => {
+    if (!target?.account?.token) return false;
+    const wc = new WecomCrypto(
+      target.account.token,
+      target.account.encodingAESKey,
+      target.account.receiveId,
+    );
+    return wc.verifySignature(signature, timestamp, nonce, encrypt);
+  });
 
-  // 按 accountId 去重（同一 account 注册多条路径时，不应被误判为冲突）
+  // Deduplicate by accountId (same account with multiple paths should not be treated as conflict)
   const uniqueMatches = deduplicateByAccountId(signatureMatches);
 
   if (uniqueMatches.length === 1) {
     return { status: "matched", target: uniqueMatches[0]! };
   }
 
-  const candidateAccountIds = (uniqueMatches.length > 0 ? uniqueMatches : candidates)
-    .map((t) => t.account.accountId);
+  const candidateAccountIds = (uniqueMatches.length > 0 ? uniqueMatches : candidates).map(
+    (t) => t.account.accountId,
+  );
 
   if (uniqueMatches.length === 0) {
     return { status: "not_found", candidateAccountIds };
   }
 
-  // uniqueMatches.length > 1 → 多账号冲突
+  // uniqueMatches.length > 1 → multi-account conflict
   return { status: "conflict", candidateAccountIds };
 }
 
 // ============================================================================
-// 主入口
+// Main entry
 // ============================================================================
 
 /**
- * Webhook HTTP 请求总入口
+ * Webhook HTTP request main entry point
  *
- * 处理企微 Bot Webhook 的 GET（URL 验证）和 POST（消息回调）请求。
- * 返回 true 表示已处理，false 表示不匹配（交给其他 handler）。
+ * Handles WeCom Bot Webhook GET (URL verification) and POST (message callback) requests.
+ * Returns true if handled, false if not matched (pass to other handlers).
  */
 export async function handleWecomWebhookRequest(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<boolean> {
-  // ── 入站诊断日志（不输出敏感参数内容，仅输出是否存在）──────────────
+  // ── Inbound diagnostic logging (does not output sensitive param values, only their presence) ──
   const reqId = crypto.randomUUID().slice(0, 8);
   const url = req.url ?? "/";
   const method = (req.method ?? "GET").toUpperCase();
@@ -333,12 +332,12 @@ export async function handleWecomWebhookRequest(
 
   if (!hasActiveTargets()) {
     console.log(`[wecom] inbound(http): reqId=${reqId} skipped — no active targets`);
-    return false; // 无注册 Target，不处理
+    return false; // No registered Targets, skip
   }
 
   const pathAccountId = parseWebhookPath(url);
 
-  // ── GET 请求：URL 验证 ──────────────────────────────────────────
+  // ── GET request: URL verification ──────────────────────────────────
   if (method === "GET") {
     const { timestamp, nonce, echostr } = query;
     const msgSignature = resolveSignatureParam(query);
@@ -347,7 +346,14 @@ export async function handleWecomWebhookRequest(
       return true;
     }
 
-    const matchResult = findMatchingTarget(url, msgSignature, timestamp, nonce, echostr, pathAccountId);
+    const matchResult = findMatchingTarget(
+      url,
+      msgSignature,
+      timestamp,
+      nonce,
+      echostr,
+      pathAccountId,
+    );
     if (matchResult.status !== "matched") {
       console.log(
         `[wecom] inbound(http): reqId=${reqId} GET route_failure reason=${matchResult.status} candidates=[${matchResult.candidateAccountIds.join(",")}]`,
@@ -360,17 +366,23 @@ export async function handleWecomWebhookRequest(
     target.runtime.log?.(`[webhook] GET URL 验证成功 (account=${target.account.accountId})`);
 
     try {
-      const wc = new WecomCrypto(target.account.token, target.account.encodingAESKey, target.account.receiveId);
+      const wc = new WecomCrypto(
+        target.account.token,
+        target.account.encodingAESKey,
+        target.account.receiveId,
+      );
       const plaintext = wc.decrypt(echostr);
       sendText(res, 200, plaintext);
     } catch (err) {
-      target.runtime.log?.(`[webhook] echostr 解密失败: ${err instanceof Error ? err.message : String(err)}`);
+      target.runtime.log?.(
+        `[webhook] echostr 解密失败: ${err instanceof Error ? err.message : String(err)}`,
+      );
       sendText(res, 403, "decryption failed");
     }
     return true;
   }
 
-  // ── POST 请求：消息回调 ──────────────────────────────────────────
+  // ── POST request: message callback ─────────────────────────────────
   if (method === "POST") {
     const { timestamp, nonce } = query;
     const msgSignature = resolveSignatureParam(query);
@@ -394,10 +406,10 @@ export async function handleWecomWebhookRequest(
       return true;
     }
 
-    // 兼容 encrypt / Encrypt 两种大小写（企微不同场景下字段名不一致）
+    // Support both encrypt / Encrypt casing (WeCom uses different field names in different scenarios)
     const encrypt = String(body.encrypt ?? body.Encrypt ?? "");
 
-    // POST body 诊断日志（不输出 encrypt 内容）
+    // POST body diagnostic logging (does not output encrypt content)
     console.log(
       `[wecom] inbound(bot): reqId=${reqId} rawJsonBytes=${Buffer.byteLength(bodyStr, "utf8")} hasEncrypt=${Boolean(encrypt)} encryptLen=${encrypt.length}`,
     );
@@ -407,15 +419,22 @@ export async function handleWecomWebhookRequest(
       return true;
     }
 
-    // 多账号签名匹配
-    const matchResult = findMatchingTarget(url, msgSignature, timestamp, nonce, encrypt, pathAccountId);
+    // Multi-account signature matching
+    const matchResult = findMatchingTarget(
+      url,
+      msgSignature,
+      timestamp,
+      nonce,
+      encrypt,
+      pathAccountId,
+    );
     if (matchResult.status !== "matched") {
-      const reason = matchResult.status === "conflict"
-        ? "wecom_account_conflict"
-        : "wecom_account_not_found";
-      const detail = matchResult.status === "conflict"
-        ? "Bot callback account conflict: multiple accounts matched signature."
-        : "Bot callback account not found: signature verification failed.";
+      const reason =
+        matchResult.status === "conflict" ? "wecom_account_conflict" : "wecom_account_not_found";
+      const detail =
+        matchResult.status === "conflict"
+          ? "Bot callback account conflict: multiple accounts matched signature."
+          : "Bot callback account not found: signature verification failed.";
       console.log(
         `[wecom] inbound(bot): reqId=${reqId} route_failure reason=${reason} path=${url.split("?")[0]} candidates=[${matchResult.candidateAccountIds.join(",")}]`,
       );
@@ -424,29 +443,31 @@ export async function handleWecomWebhookRequest(
     }
     const target = matchResult.target;
 
-    target.runtime.log?.(
-      `[webhook] POST 签名验证成功 (account=${target.account.accountId})`,
-    );
+    target.runtime.log?.(`[webhook] POST 签名验证成功 (account=${target.account.accountId})`);
 
-    // 更新状态：最后接收消息时间
+    // Update status: last inbound message time
     target.statusSink?.({ lastInboundAt: Date.now() });
 
-    // 消息解密
+    // Message decryption
     let message: WebhookInboundMessage;
     try {
-      const wc = new WecomCrypto(target.account.token, target.account.encodingAESKey, target.account.receiveId);
+      const wc = new WecomCrypto(
+        target.account.token,
+        target.account.encodingAESKey,
+        target.account.receiveId,
+      );
       const plaintext = wc.decrypt(encrypt);
       message = JSON.parse(plaintext) as WebhookInboundMessage;
     } catch (err) {
       target.runtime.log?.(
         `[webhook] 消息解密失败: ${err instanceof Error ? err.message : String(err)}`,
       );
-      // 解密失败返回 400 + 可读错误信息（与原版一致，方便排查 EncodingAESKey 配置错误）
+      // Return 400 with a readable error message on decryption failure (consistent with original, helps troubleshoot EncodingAESKey config errors)
       sendText(res, 400, "decrypt failed - 解密失败，请检查 EncodingAESKey");
       return true;
     }
 
-    // aibotid 身份校验（安全兜底：即使签名匹配，也校验消息中的 aibotid）
+    // aibotid identity verification (safety fallback: verify aibotid in message even if signature matches)
     const expectedBotIds = resolveBotIdentitySet(target);
     if (expectedBotIds.size > 0) {
       const inboundAibotId = String(message.aibotid ?? "").trim();
@@ -461,17 +482,17 @@ export async function handleWecomWebhookRequest(
       `[webhook] 收到消息 (type=${message.msgtype}, msgid=${message.msgid ?? "N/A"}, account=${target.account.accountId})`,
     );
 
-    // 获取出口代理 URL（对齐原版 resolveWecomEgressProxyUrl）
+    // Get egress proxy URL (aligned with original resolveWecomEgressProxyUrl)
     const proxyUrl = resolveWecomEgressProxyUrl(target.config);
 
-    // 按消息类型分发
+    // Dispatch by message type
     try {
       const responseData = await dispatchMessage(target, message, timestamp, nonce, proxyUrl);
       if (responseData) {
         const encrypted = encryptResponse(target, responseData, timestamp, nonce);
         sendEncryptedReply(res, encrypted);
       } else {
-        // 空响应也使用加密包装
+        // Empty response also uses encrypted wrapper
         const encrypted = encryptResponse(target, {}, timestamp, nonce);
         sendEncryptedReply(res, encrypted);
       }
@@ -479,7 +500,7 @@ export async function handleWecomWebhookRequest(
       target.runtime.error?.(
         `[webhook] 消息处理异常: ${err instanceof Error ? err.message : String(err)}`,
       );
-      // 对齐原版：尽量返回 200 避免企微重试风暴，同时给一个可见的错误文本
+      // Aligned with original: return 200 to avoid WeCom retry storms, while providing a visible error text
       const errorResponse = {
         msgtype: "text",
         text: { content: "服务内部错误：Bot 处理异常，请稍后重试。" },
@@ -495,11 +516,11 @@ export async function handleWecomWebhookRequest(
 }
 
 // ============================================================================
-// 消息分发
+// Message dispatch
 // ============================================================================
 
 /**
- * 根据消息类型分发到对应的处理函数
+ * Dispatch to the corresponding handler based on message type
  */
 async function dispatchMessage(
   target: WecomWebhookTarget,
@@ -510,12 +531,12 @@ async function dispatchMessage(
 ): Promise<Record<string, unknown> | null> {
   const msgtype = message.msgtype;
 
-  // stream_refresh 轮询
+  // stream_refresh polling
   if (msgtype === "stream") {
     return handleStreamRefresh(target, message);
   }
 
-  // 事件处理
+  // Event handling
   if (msgtype === "event") {
     const eventType = String(message.event?.eventtype ?? "").toLowerCase();
     if (eventType === "enter_chat") {
@@ -528,9 +549,9 @@ async function dispatchMessage(
     return null;
   }
 
-  // 普通消息（text / image / file / voice / video / mixed）
+  // Regular messages (text / image / file / voice / video / mixed)
   if (["text", "image", "file", "voice", "video", "mixed"].includes(msgtype)) {
-    // 过滤非真实用户消息（与原版 shouldProcessBotInboundMessage 对齐）
+    // Filter non-real-user messages (aligned with original shouldProcessBotInboundMessage)
     const filterResult = shouldProcessBotInboundMessage(message);
     if (!filterResult.shouldProcess) {
       target.runtime.log?.(

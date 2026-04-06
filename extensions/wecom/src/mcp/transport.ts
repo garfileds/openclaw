@@ -1,27 +1,27 @@
 /**
- * MCP Streamable HTTP 传输层模块
+ * MCP Streamable HTTP Transport Layer Module
  *
- * 负责:
- * - MCP JSON-RPC over HTTP 通信（发送请求、解析响应）
- * - Streamable HTTP session 生命周期管理（initialize 握手 → Mcp-Session-Id 维护 → 失效重建）
- * - 自动检测无状态 Server：如果 initialize 响应未返回 Mcp-Session-Id，
- *   则标记为无状态模式，后续请求跳过握手和 session 管理
- * - SSE 流式响应解析
- * - MCP 配置运行时缓存（通过 WSClient 拉取 URL 并缓存在内存中）
+ * Responsible for:
+ * - MCP JSON-RPC over HTTP communication (sending requests, parsing responses)
+ * - Streamable HTTP session lifecycle management (initialize handshake → Mcp-Session-Id maintenance → invalidation rebuild)
+ * - Auto-detecting stateless Servers: if initialize response does not return Mcp-Session-Id,
+ *   marks as stateless mode, subsequent requests skip handshake and session management
+ * - SSE streaming response parsing
+ * - MCP config runtime caching (fetching URL via WSClient and caching in memory)
  */
 
 import { generateReqId } from "@wecom/aibot-node-sdk";
+import { MCP_GET_CONFIG_CMD, MCP_CONFIG_FETCH_TIMEOUT_MS } from "../const.js";
 import { DEFAULT_ACCOUNT_ID } from "../openclaw-compat.js";
 import { getWeComWebSocket } from "../state-manager.js";
-import { MCP_GET_CONFIG_CMD, MCP_CONFIG_FETCH_TIMEOUT_MS } from "../const.js";
 import { withTimeout } from "../timeout.js";
 import { PLUGIN_VERSION } from "../version.js";
 
 // ============================================================================
-// 类型定义
+// Type Definitions
 // ============================================================================
 
-/** MCP JSON-RPC 请求体 */
+/** MCP JSON-RPC request body */
 interface JsonRpcRequest {
   jsonrpc: "2.0";
   id?: string;
@@ -29,7 +29,7 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-/** MCP JSON-RPC 响应体 */
+/** MCP JSON-RPC response body */
 interface JsonRpcResponse {
   jsonrpc: "2.0";
   id: number | string;
@@ -42,12 +42,12 @@ interface JsonRpcResponse {
 }
 
 /**
- * Streamable HTTP 会话信息
+ * Streamable HTTP Session Information
  *
- * 每个 MCP Server category 维护一个独立的会话，包含：
- * - sessionId: 服务端通过 Mcp-Session-Id 响应头返回的会话标识
- * - initialized: 是否已完成 initialize 握手
- * - stateless: 服务端未返回 Mcp-Session-Id 时标记为无状态模式，后续请求跳过 session 管理
+ * Each MCP Server category maintains an independent session containing:
+ * - sessionId: session identifier returned by server via Mcp-Session-Id response header
+ * - initialized: whether the initialize handshake is complete
+ * - stateless: marked as stateless mode when server doesn't return Mcp-Session-Id, subsequent requests skip session management
  */
 interface McpSession {
   sessionId: string | null;
@@ -56,23 +56,23 @@ interface McpSession {
 }
 
 // ============================================================================
-// 内部状态
+// Internal State
 // ============================================================================
 
-/** HTTP 请求超时时间（毫秒） */
+/** HTTP request timeout (milliseconds) */
 const HTTP_REQUEST_TIMEOUT_MS = 30_000;
 
-/** 媒体下载请求超时时间（毫秒），base64 编码的媒体文件最大可达 ~27MB */
+/** Media download request timeout (milliseconds); base64-encoded media files can be up to ~27MB */
 export const MEDIA_DOWNLOAD_TIMEOUT_MS = 120_000;
 
-/** 日志前缀 */
+/** Log prefix */
 const LOG_TAG = "[mcp]";
 
 /**
- * MCP JSON-RPC 错误
+ * MCP JSON-RPC Error
  *
- * 携带服务端返回的 JSON-RPC error.code，
- * 用于上层按错误码进行差异化处理（如特定错误码触发缓存清理）。
+ * Carries the JSON-RPC error.code returned by the server,
+ * used by upper layers for differentiated handling based on error codes (e.g., triggering cache cleanup for specific codes).
  */
 export class McpRpcError extends Error {
   constructor(
@@ -86,10 +86,10 @@ export class McpRpcError extends Error {
 }
 
 /**
- * MCP HTTP 错误
+ * MCP HTTP Error
  *
- * 携带 HTTP 状态码，用于精确判断 session 失效（404）等场景，
- * 避免通过字符串匹配 "404" 导致的误判。
+ * Carries HTTP status code for precise detection of session invalidation (404) and similar scenarios,
+ * avoiding false positives from string-matching "404".
  */
 export class McpHttpError extends Error {
   constructor(
@@ -102,39 +102,39 @@ export class McpHttpError extends Error {
 }
 
 /**
- * 需要清理缓存的 JSON-RPC 错误码集合
+ * Set of JSON-RPC error codes that require cache cleanup
  *
- * 当 MCP Server 返回以下错误码时，说明服务端状态已发生变化（如配置变更、
- * 服务重启等），需要清理对应 category 的全部缓存，确保下次请求重新
- * 拉取配置并重建会话。
+ * When the MCP Server returns these error codes, it indicates server state has changed
+ * (e.g., config change, service restart), requiring cleanup of all caches for the
+ * corresponding category to ensure the next request re-fetches config and rebuilds the session.
  *
- * - -32001: 服务不可用（Server Unavailable）
- * - -32002: 配置已变更（Config Changed）
- * - -32003: 认证失败（Auth Failed）
+ * - -32001: Server Unavailable
+ * - -32002: Config Changed
+ * - -32003: Auth Failed
  */
 const CACHE_CLEAR_ERROR_CODES = new Set([-32001, -32002, -32003]);
 
-/** MCP 配置缓存：category → response.body（完整配置） */
+/** MCP config cache: category → response.body (full config) */
 const mcpConfigCache = new Map<string, Record<string, unknown>>();
 
-/** Streamable HTTP 会话缓存：category → session */
+/** Streamable HTTP session cache: category → session */
 const mcpSessionCache = new Map<string, McpSession>();
 
-/** 已确认为无状态的 MCP Server 品类集合（跳过后续握手） */
+/** Set of confirmed stateless MCP Server categories (skip subsequent handshakes) */
 const statelessCategories = new Set<string>();
 
-/** 正在进行中的 initialize 请求（防止并发重复初始化），key 为 category */
+/** In-flight initialize requests (prevents concurrent duplicate initialization), keyed by category */
 const inflightInitRequests = new Map<string, Promise<McpSession>>();
 
 // ============================================================================
-// MCP 配置拉取与缓存
+// MCP Config Fetching & Caching
 // ============================================================================
 
 /**
- * 通过 WSClient 拉取指定 category 的 MCP 完整配置
+ * Fetch the complete MCP config for a specified category via WSClient
  *
- * @param category - MCP 品类名称，如 doc、contact
- * @returns 完整的 response.body 配置对象（至少包含 url 字段）
+ * @param category - MCP category name, e.g., doc, contact
+ * @returns Complete response.body config object (containing at least a url field)
  */
 async function fetchMcpConfig(category: string): Promise<Record<string, unknown>> {
   const wsClient = getWeComWebSocket(DEFAULT_ACCOUNT_ID);
@@ -147,7 +147,7 @@ async function fetchMcpConfig(category: string): Promise<Record<string, unknown>
   const response = await withTimeout(
     wsClient.reply(
       { headers: { req_id: reqId } },
-      { biz_type: category, plugin_version: PLUGIN_VERSION  },
+      { biz_type: category, plugin_version: PLUGIN_VERSION },
       MCP_GET_CONFIG_CMD,
     ),
     MCP_CONFIG_FETCH_TIMEOUT_MS,
@@ -162,9 +162,7 @@ async function fetchMcpConfig(category: string): Promise<Record<string, unknown>
 
   const body = response.body as { url?: string } | undefined;
   if (!body?.url) {
-    throw new Error(
-      `MCP 配置响应缺少 url 字段 (category="${category}")`,
-    );
+    throw new Error(`MCP 配置响应缺少 url 字段 (category="${category}")`);
   }
 
   console.log(`${LOG_TAG} 配置拉取成功 (category="${category}")`);
@@ -172,22 +170,22 @@ async function fetchMcpConfig(category: string): Promise<Record<string, unknown>
 }
 
 /**
- * 获取指定品类的 MCP Server URL
+ * Get the MCP Server URL for a specified category
  *
- * 优先从内存缓存中读取，未命中时通过 WSClient 拉取并缓存。
+ * Reads from memory cache first; fetches via WSClient and caches on miss.
  *
- * @param category - MCP 品类名称
+ * @param category - MCP category name
  * @returns MCP Server URL
  */
 async function getMcpUrl(category: string): Promise<string> {
-  // 查内存缓存
+  // Check memory cache
   const cached = mcpConfigCache.get(category);
   if (cached) return cached.url as string;
 
-  // 缓存未命中，通过 WSClient 拉取
+  // Cache miss, fetch via WSClient
   const body = await fetchMcpConfig(category);
 
-  // 写入缓存
+  // Write to cache
   mcpConfigCache.set(category, body);
 
   console.log(`${LOG_TAG} getMcpUrl ${category}: ${body.url}`);
@@ -196,14 +194,14 @@ async function getMcpUrl(category: string): Promise<string> {
 }
 
 // ============================================================================
-// HTTP 底层通信
+// HTTP Low-Level Communication
 // ============================================================================
 
 /**
- * 发送原始 HTTP 请求到 MCP Server（底层方法）
+ * Send raw HTTP request to MCP Server (low-level method)
  *
- * 自动携带 Mcp-Session-Id 请求头（如果有），
- * 并从响应头中更新 sessionId。
+ * Automatically includes the Mcp-Session-Id request header (if available),
+ * and updates sessionId from the response header.
  */
 async function sendRawJsonRpc(
   url: string,
@@ -218,7 +216,7 @@ async function sendRawJsonRpc(
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
   };
-  // Streamable HTTP：携带会话 ID
+  // Streamable HTTP: include session ID
   if (session.sessionId) {
     headers["Mcp-Session-Id"] = session.sessionId;
   }
@@ -240,7 +238,7 @@ async function sendRawJsonRpc(
     clearTimeout(timeoutId);
   }
 
-  // 从响应头提取新的 sessionId（不直接修改入参，由调用方决定如何更新）
+  // Extract new sessionId from response header (don't modify input directly; let caller decide how to update)
   const newSessionId = response.headers.get("mcp-session-id");
 
   if (!response.ok) {
@@ -250,7 +248,7 @@ async function sendRawJsonRpc(
     );
   }
 
-  // Streamable HTTP：notification 响应可能无响应体（204 或 content-length: 0）
+  // Streamable HTTP: notification responses may have no body (204 or content-length: 0)
   const contentLength = response.headers.get("content-length");
   if (response.status === 204 || contentLength === "0") {
     return { response, rpcResult: undefined, newSessionId };
@@ -258,12 +256,12 @@ async function sendRawJsonRpc(
 
   const contentType = response.headers.get("content-type") ?? "";
 
-  // 处理 SSE 流式响应
+  // Handle SSE streaming response
   if (contentType.includes("text/event-stream")) {
     return { response, rpcResult: await parseSseResponse(response), newSessionId };
   }
 
-  // 普通 JSON 响应 — 先读取文本，防止空内容导致 JSON.parse 报错
+  // Plain JSON response — read text first to prevent JSON.parse error on empty content
   const text = await response.text();
   if (!text.trim()) {
     return { response, rpcResult: undefined, newSessionId };
@@ -281,21 +279,21 @@ async function sendRawJsonRpc(
 }
 
 // ============================================================================
-// Session 管理
+// Session Management
 // ============================================================================
 
 /**
- * 对指定 URL 执行 Streamable HTTP 的 initialize 握手
+ * Perform Streamable HTTP initialize handshake for a specified URL
  *
- * 发送 initialize → 接收 serverInfo → 发送 initialized 通知。
- * 如果服务端未返回 Mcp-Session-Id，则标记为无状态模式，后续请求跳过 session 管理。
+ * Sends initialize → receives serverInfo → sends initialized notification.
+ * If the server does not return Mcp-Session-Id, marks as stateless mode and skips session management for subsequent requests.
  */
 async function initializeSession(url: string, category: string): Promise<McpSession> {
   const session: McpSession = { sessionId: null, initialized: false, stateless: false };
 
   console.log(`${LOG_TAG} 开始 initialize 握手 (category="${category}")`);
 
-  // 1. 发送 initialize 请求
+  // 1. Send initialize request
   const initBody: JsonRpcRequest = {
     jsonrpc: "2.0",
     id: generateReqId("mcp_init"),
@@ -309,13 +307,13 @@ async function initializeSession(url: string, category: string): Promise<McpSess
 
   const { newSessionId: initSessionId } = await sendRawJsonRpc(url, session, initBody);
 
-  // 用返回的 newSessionId 更新 session（不再依赖副作用修改）
+  // Update session with the returned newSessionId (no longer relying on side-effect mutations)
   if (initSessionId) {
     session.sessionId = initSessionId;
   }
 
-  // 检查服务端是否返回了 Mcp-Session-Id
-  // 如果没有返回，说明该 Server 是无状态实现，无需维护 session
+  // Check if the server returned Mcp-Session-Id
+  // If not, the Server is a stateless implementation and doesn't need session management
   if (!session.sessionId) {
     session.stateless = true;
     session.initialized = true;
@@ -325,44 +323,46 @@ async function initializeSession(url: string, category: string): Promise<McpSess
     return session;
   }
 
-  // 2. 发送 initialized 通知（JSON-RPC notification 不带 id 字段）
+  // 2. Send initialized notification (JSON-RPC notification has no id field)
   const notifyBody: JsonRpcRequest = {
     jsonrpc: "2.0",
     method: "notifications/initialized",
   };
-  // initialized 通知不需要等待响应，但 Streamable HTTP 要求通过 POST 发送
+  // initialized notification doesn't need to wait for response, but Streamable HTTP requires sending via POST
   const { newSessionId: notifySessionId } = await sendRawJsonRpc(url, session, notifyBody);
 
-  // 如果 initialized 通知的响应也携带了 sessionId，以最新的为准
+  // If the initialized notification response also carries a sessionId, use the latest one
   if (notifySessionId) {
     session.sessionId = notifySessionId;
   }
 
   session.initialized = true;
   mcpSessionCache.set(category, session);
-  console.log(`${LOG_TAG} 有状态 Session 建立成功 (category="${category}", sessionId="${session.sessionId}")`);
+  console.log(
+    `${LOG_TAG} 有状态 Session 建立成功 (category="${category}", sessionId="${session.sessionId}")`,
+  );
   return session;
 }
 
 /**
- * 获取或创建指定 URL 的 MCP 会话
+ * Get or create the MCP session for a specified URL
  *
- * - 已确认无状态的 category：直接返回空 session，跳过握手
- * - 已有可用有状态会话：直接返回缓存
- * - 其他情况：执行 initialize 握手，并发请求会被合并
+ * - Confirmed stateless category: return empty session directly, skip handshake
+ * - Existing usable stateful session: return cached directly
+ * - Other cases: perform initialize handshake, concurrent requests are merged
  */
 async function getOrCreateSession(url: string, category: string): Promise<McpSession> {
-  // 已确认为无状态的 Server，直接返回空 session 跳过握手
+  // Confirmed stateless Server, return empty session directly to skip handshake
   if (statelessCategories.has(category)) {
     const cached = mcpSessionCache.get(category);
     if (cached) return cached;
-    // 首次发现被清除（理论上不会走到这里），重新走握手探测
+    // First time found cleared (theoretically shouldn't reach here), re-run handshake detection
   }
 
   const cached = mcpSessionCache.get(category);
   if (cached?.initialized) return cached;
 
-  // 防止并发重复初始化
+  // Prevent concurrent duplicate initialization
   const inflight = inflightInitRequests.get(category);
   if (inflight) return inflight;
 
@@ -374,20 +374,20 @@ async function getOrCreateSession(url: string, category: string): Promise<McpSes
 }
 
 // ============================================================================
-// SSE 解析
+// SSE Parsing
 // ============================================================================
 
 /**
- * 解析 SSE 流式响应，提取最终的 JSON-RPC result
+ * Parse SSE streaming response and extract the final JSON-RPC result
  *
- * 按照 SSE 规范，同一事件中的多个 `data:` 行会用换行符拼接。
- * 空行分隔不同事件，取最后一个完整事件的数据。
+ * Per SSE specification, multiple `data:` lines within the same event are joined with newlines.
+ * Empty lines separate different events; the last complete event's data is used.
  */
 async function parseSseResponse(response: Response): Promise<unknown> {
   const text = await response.text();
   const lines = text.split("\n");
 
-  // 按 SSE 规范解析：空行分隔事件，同一事件内的 data 行用换行拼接
+  // Parse per SSE spec: empty lines separate events, data lines within same event are joined with newlines
   let currentDataParts: string[] = [];
   let lastEventData = "";
 
@@ -395,16 +395,16 @@ async function parseSseResponse(response: Response): Promise<unknown> {
     if (line.startsWith("data: ")) {
       currentDataParts.push(line.slice(6));
     } else if (line.startsWith("data:")) {
-      // data: 后无空格时，值为空字符串
+      // data: with no space after colon means empty string value
       currentDataParts.push(line.slice(5));
     } else if (line.trim() === "" && currentDataParts.length > 0) {
-      // 空行表示事件结束，拼接所有 data 行
+      // Empty line marks end of event, join all data lines
       lastEventData = currentDataParts.join("\n").trim();
       currentDataParts = [];
     }
   }
 
-  // 处理最后一个未以空行结尾的事件
+  // Handle the last event that doesn't end with an empty line
   if (currentDataParts.length > 0) {
     lastEventData = currentDataParts.join("\n").trim();
   }
@@ -432,15 +432,16 @@ async function parseSseResponse(response: Response): Promise<unknown> {
 }
 
 // ============================================================================
-// 公共 API
+// Public API
 // ============================================================================
 
 /**
- * 清理指定品类的所有 MCP 缓存（配置、会话、无状态标记）
+ * Clear all MCP caches for a specified category (config, session, stateless flag)
  *
- * 当 MCP Server 返回特定错误码时调用，确保下次请求重新拉取配置并重建会话。
+ * Called when MCP Server returns specific error codes to ensure the next request
+ * re-fetches config and rebuilds the session.
  *
- * @param category - MCP 品类名称
+ * @param category - MCP category name
  */
 export function clearCategoryCache(category: string): void {
   console.log(`${LOG_TAG} 清理缓存 (category="${category}")`);
@@ -450,30 +451,30 @@ export function clearCategoryCache(category: string): void {
   inflightInitRequests.delete(category);
 }
 
-/** tools/list 返回的工具描述 */
+/** Tool description returned by tools/list */
 export interface McpToolInfo {
   name: string;
   description?: string;
   inputSchema?: Record<string, unknown>;
 }
 
-/** sendJsonRpc 的可选配置 */
+/** Optional config for sendJsonRpc */
 export interface SendJsonRpcOptions {
-  /** 自定义 HTTP 请求超时时间（毫秒），默认使用 HTTP_REQUEST_TIMEOUT_MS */
+  /** Custom HTTP request timeout (milliseconds), defaults to HTTP_REQUEST_TIMEOUT_MS */
   timeoutMs?: number;
 }
 
 /**
- * 发送 JSON-RPC 请求到 MCP Server（Streamable HTTP 协议）
+ * Send JSON-RPC request to MCP Server (Streamable HTTP protocol)
  *
- * 自动管理 session 生命周期：
- * - 无状态 Server：跳过 session 管理，直接发送请求
- * - 有状态 Server：首次调用先执行 initialize 握手，session 失效（404）时自动重建并重试
+ * Automatically manages session lifecycle:
+ * - Stateless Server: skip session management, send request directly
+ * - Stateful Server: perform initialize handshake on first call, auto-rebuild and retry on session invalidation (404)
  *
- * @param category - MCP 品类名称
- * @param method - JSON-RPC 方法名
- * @param params - JSON-RPC 参数
- * @param options - 可选配置（如自定义超时）
+ * @param category - MCP category name
+ * @param method - JSON-RPC method name
+ * @param params - JSON-RPC parameters
+ * @param options - Optional config (e.g., custom timeout)
  * @returns JSON-RPC result
  */
 export async function sendJsonRpc(
@@ -502,7 +503,7 @@ export async function sendJsonRpc(
     }
     return rpcResult;
   } catch (err) {
-    // 特定 JSON-RPC 错误码触发缓存清理（统一在传输层处理，上层无需关心）
+    // Specific JSON-RPC error codes trigger cache cleanup (handled uniformly in transport layer; upper layers don't need to care)
     if (err instanceof McpRpcError && CACHE_CLEAR_ERROR_CODES.has(err.code)) {
       clearCategoryCache(category);
     }
@@ -526,16 +527,18 @@ export async function sendJsonRpc(
     }
 
     // 其他错误记录日志后抛出
-    console.error(`${LOG_TAG} RPC 请求失败 (category="${category}", method="${method}"): ${err instanceof Error ? err.message : String(err)}`);
+    console.error(
+      `${LOG_TAG} RPC 请求失败 (category="${category}", method="${method}"): ${err instanceof Error ? err.message : String(err)}`,
+    );
     throw err;
   }
 }
 
 /**
- * 合并并发的 session 重建请求
+ * Merge concurrent session rebuild requests
  *
- * 与 getOrCreateSession 类似，使用 inflightInitRequests 防止
- * 多个并发请求同时遇到 404 时重复执行 initialize 握手。
+ * Similar to getOrCreateSession, uses inflightInitRequests to prevent
+ * multiple concurrent requests from simultaneously encountering 404 and duplicating initialize handshakes.
  */
 async function rebuildSession(url: string, category: string): Promise<McpSession> {
   const inflight = inflightInitRequests.get(category);

@@ -1,67 +1,68 @@
 /**
- * MCP call 拦截器类型定义
+ * MCP Call Interceptor Type Definitions
  *
- * 拦截器用于在 tools/call 调用前后注入特殊逻辑，
- * 如修改超时配置、变换响应结果等，避免在 tool.ts 中堆积 if/else。
+ * Interceptors inject special logic before and after tools/call invocations,
+ * such as modifying timeout config or transforming response results,
+ * avoiding piling up if/else in tool.ts.
  */
 
 import type { SendJsonRpcOptions } from "../transport.js";
 
 // ============================================================================
-// 类型定义
+// Type Definitions
 // ============================================================================
 
-/** MCP call 调用的上下文 */
+/** Context of an MCP call invocation */
 export interface CallContext {
-  /** MCP 品类，对应 mcpConfig 中的 key，如 doc、contact */
+  /** MCP category, corresponding to mcpConfig keys, e.g., doc, contact */
   category: string;
-  /** 调用的 MCP 方法名 */
+  /** MCP method name being called */
   method: string;
-  /** 调用 MCP 方法的参数 */
+  /** Parameters for the MCP method call */
   args: Record<string, unknown>;
 }
 
 /**
- * beforeCall 返回的选项
+ * Options returned by beforeCall
  *
- * 扩展 SendJsonRpcOptions，允许拦截器在调用前替换 args（如从本地文件读取请求体）。
+ * Extends SendJsonRpcOptions to allow interceptors to replace args before the call (e.g., read request body from local file).
  */
 export interface BeforeCallOptions extends SendJsonRpcOptions {
-  /** 替换后的 args（可选，不返回则使用原 args） */
+  /** Replaced args (optional; if not returned, original args are used) */
   args?: Record<string, unknown>;
 }
 
 /**
- * call 拦截器接口
+ * Call Interceptor Interface
  *
- * 每个拦截器通过 match 判断是否对当前调用生效，
- * 生效时可在调用前（beforeCall）和调用后（afterCall）注入逻辑。
+ * Each interceptor uses match to determine if it applies to the current call.
+ * When active, it can inject logic before (beforeCall) and after (afterCall) the call.
  */
 export interface CallInterceptor {
-  /** 拦截器名称（用于日志） */
+  /** Interceptor name (used for logging) */
   name: string;
 
   /**
-   * 判断是否对当前调用生效
+   * Determine if this interceptor applies to the current call
    *
-   * 返回 true 时才会执行 beforeCall / afterCall
+   * beforeCall / afterCall are only executed when this returns true
    */
   match(ctx: CallContext): boolean;
 
   /**
-   * 在 sendJsonRpc 调用前修改请求选项和参数（可选）
+   * Modify request options and parameters before sendJsonRpc call (optional)
    *
-   * 如 get_msg_media 需要延长超时时间，
-   * 如 smartpage_create 需要从本地文件读取请求体替换 args。
-   * 返回的选项会与其他拦截器的结果合并（timeoutMs 取最大值，args 后者覆盖前者）。
+   * e.g., get_msg_media needs extended timeout,
+   * e.g., smartpage_create needs to read request body from local file to replace args.
+   * Returned options are merged with other interceptors' results (timeoutMs takes max, args: later overwrites earlier).
    */
   beforeCall?(ctx: CallContext): BeforeCallOptions | Promise<BeforeCallOptions> | undefined;
 
   /**
-   * 在 sendJsonRpc 返回后处理/变换结果（可选）
+   * Process/transform results after sendJsonRpc returns (optional)
    *
-   * 多个拦截器的 afterCall 按注册顺序管道式执行，
-   * 前一个的返回值作为下一个的输入。
+   * Multiple interceptors' afterCall execute sequentially in pipeline fashion;
+   * the return value of the previous becomes the input of the next.
    */
   afterCall?(ctx: CallContext, result: unknown): Promise<unknown> | unknown;
 }

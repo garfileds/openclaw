@@ -100,7 +100,7 @@ export function buildWecomUnauthorizedCommandPrompt(params: {
       `管理员：${policyCmd("open")}（全放开）或 ${policyCmd("allowlist")}（白名单）`,
     ].join("\n");
   }
-  // WeCom 不支持 pairing CLI，因此这里统一给出“open / allowlist”两种明确的配置指令
+  // WeCom does not support pairing CLI, so we provide two explicit config options: "open / allowlist"
   return [
     `无权限执行命令（入口：${scopeLabel}，userid：${user}）`,
     `管理员全放开：${policyCmd("open")}`,

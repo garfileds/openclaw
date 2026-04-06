@@ -1,65 +1,65 @@
 /**
- * 企业微信全局状态管理模块
+ * WeCom global state management module
  *
- * 负责管理 WSClient 实例、消息状态（带 TTL 清理）、ReqId 存储
- * 解决全局 Map 的内存泄漏问题
+ * Manages WSClient instances, message state (with TTL cleanup), and ReqId storage.
+ * Solves memory leak issues with global Maps.
  */
 
 import type { WSClient } from "@wecom/aibot-node-sdk";
-import type { MessageState } from "./interface.js";
-import { createPersistentReqIdStore, type PersistentReqIdStore } from "./reqid-store.js";
 import {
   MESSAGE_STATE_TTL_MS,
   MESSAGE_STATE_CLEANUP_INTERVAL_MS,
   MESSAGE_STATE_MAX_SIZE,
 } from "./const.js";
+import type { MessageState } from "./interface.js";
+import { createPersistentReqIdStore, type PersistentReqIdStore } from "./reqid-store.js";
 
 // ============================================================================
-// WSClient 实例管理
+// WSClient instance management
 // ============================================================================
 
-/** WSClient 实例管理 */
+/** WSClient instance management */
 const wsClientInstances = new Map<string, WSClient>();
 
 /**
- * 获取指定账户的 WSClient 实例
+ * Get the WSClient instance for a specified account
  */
 export function getWeComWebSocket(accountId: string): WSClient | null {
   return wsClientInstances.get(accountId) ?? null;
 }
 
 /**
- * 设置指定账户的 WSClient 实例
+ * Set the WSClient instance for a specified account
  */
 export function setWeComWebSocket(accountId: string, client: WSClient): void {
   wsClientInstances.set(accountId, client);
 }
 
 /**
- * 删除指定账户的 WSClient 实例
+ * Delete the WSClient instance for a specified account
  */
 export function deleteWeComWebSocket(accountId: string): void {
   wsClientInstances.delete(accountId);
 }
 
 // ============================================================================
-// 消息状态管理（带 TTL 清理，防止内存泄漏）
+// Message state management (with TTL cleanup to prevent memory leaks)
 // ============================================================================
 
-/** 消息状态条目（带创建时间戳，用于 TTL 清理） */
+/** Message state entry (with creation timestamp for TTL cleanup) */
 interface MessageStateEntry {
   state: MessageState;
   createdAt: number;
 }
 
-/** 消息状态管理 */
+/** Message state management */
 const messageStates = new Map<string, MessageStateEntry>();
 
-/** 定期清理定时器 */
+/** Periodic cleanup timer */
 let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
- * 启动消息状态定期清理（自动 TTL 清理 + 容量限制）
+ * Start periodic message state cleanup (automatic TTL cleanup + capacity limit)
  */
 export function startMessageStateCleanup(): void {
   if (cleanupTimer) return;
@@ -68,14 +68,14 @@ export function startMessageStateCleanup(): void {
     pruneMessageStates();
   }, MESSAGE_STATE_CLEANUP_INTERVAL_MS);
 
-  // 允许进程退出时不阻塞
+  // Allow process exit without blocking
   if (cleanupTimer && typeof cleanupTimer === "object" && "unref" in cleanupTimer) {
     cleanupTimer.unref();
   }
 }
 
 /**
- * 停止消息状态定期清理
+ * Stop periodic message state cleanup
  */
 export function stopMessageStateCleanup(): void {
   if (cleanupTimer) {
@@ -85,19 +85,19 @@ export function stopMessageStateCleanup(): void {
 }
 
 /**
- * 清理过期和超量的消息状态条目
+ * Clean up expired and over-capacity message state entries
  */
 function pruneMessageStates(): void {
   const now = Date.now();
 
-  // 1. 清理过期条目
+  // 1. Clean up expired entries
   for (const [key, entry] of messageStates) {
     if (now - entry.createdAt >= MESSAGE_STATE_TTL_MS) {
       messageStates.delete(key);
     }
   }
 
-  // 2. 容量限制：如果仍超过最大条目数，按时间淘汰最旧的
+  // 2. Capacity limit: if still exceeding max entries, evict the oldest by time
   if (messageStates.size > MESSAGE_STATE_MAX_SIZE) {
     const sorted = [...messageStates.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
     const toRemove = sorted.slice(0, messageStates.size - MESSAGE_STATE_MAX_SIZE);
@@ -108,7 +108,7 @@ function pruneMessageStates(): void {
 }
 
 /**
- * 设置消息状态
+ * Set message state
  */
 export function setMessageState(messageId: string, state: MessageState): void {
   messageStates.set(messageId, {
@@ -118,13 +118,13 @@ export function setMessageState(messageId: string, state: MessageState): void {
 }
 
 /**
- * 获取消息状态
+ * Get message state
  */
 export function getMessageState(messageId: string): MessageState | undefined {
   const entry = messageStates.get(messageId);
   if (!entry) return undefined;
 
-  // 检查 TTL
+  // Check TTL
   if (Date.now() - entry.createdAt >= MESSAGE_STATE_TTL_MS) {
     messageStates.delete(messageId);
     return undefined;
@@ -133,27 +133,27 @@ export function getMessageState(messageId: string): MessageState | undefined {
 }
 
 /**
- * 删除消息状态
+ * Delete message state
  */
 export function deleteMessageState(messageId: string): void {
   messageStates.delete(messageId);
 }
 
 /**
- * 清空所有消息状态
+ * Clear all message states
  */
 export function clearAllMessageStates(): void {
   messageStates.clear();
 }
 
 // ============================================================================
-// ReqId 持久化存储管理（按 accountId 隔离）
+// ReqId persistent storage management (isolated by accountId)
 // ============================================================================
 
 /**
- * ReqId 持久化存储管理
- * 参考 createPersistentDedupe 模式：内存 + 磁盘双层、文件锁、原子写入、TTL 过期、防抖写入
- * 重启后可从磁盘恢复，确保主动推送消息时能获取到 reqId
+ * ReqId persistent storage management
+ * Based on the createPersistentDedupe pattern: memory + disk dual layer, file lock, atomic write, TTL expiry, debounced write.
+ * Can recover from disk after restart, ensuring reqId is available for proactive message sending.
  */
 const reqIdStores = new Map<string, PersistentReqIdStore>();
 
@@ -167,102 +167,105 @@ function getOrCreateReqIdStore(accountId: string): PersistentReqIdStore {
 }
 
 // ============================================================================
-// ReqId 操作函数
+// ReqId helper functions
 // ============================================================================
 
 /**
- * 设置 chatId 对应的 reqId（写入内存 + 防抖写磁盘）
+ * Set the reqId for a chatId (write to memory + debounce disk writes)
  */
 export function setReqIdForChat(chatId: string, reqId: string, accountId = "default"): void {
   getOrCreateReqIdStore(accountId).set(chatId, reqId);
 }
 
 /**
- * 获取 chatId 对应的 reqId（异步：优先内存，miss 时查磁盘并回填内存）
+ * Get the reqId for a chatId (async: prefer memory, fall back to disk on miss and repopulate memory)
  */
-export async function getReqIdForChatAsync(chatId: string, accountId = "default"): Promise<string | undefined> {
+export async function getReqIdForChatAsync(
+  chatId: string,
+  accountId = "default",
+): Promise<string | undefined> {
   return getOrCreateReqIdStore(accountId).get(chatId);
 }
 
 /**
- * 获取 chatId 对应的 reqId（同步：仅内存，保留向后兼容）
+ * Get the reqId for a chatId (sync: memory only, kept for backward compatibility)
  */
 export function getReqIdForChat(chatId: string, accountId = "default"): string | undefined {
   return getOrCreateReqIdStore(accountId).getSync(chatId);
 }
 
 /**
- * 删除 chatId 对应的 reqId
+ * Delete the reqId for a chatId
  */
 export function deleteReqIdForChat(chatId: string, accountId = "default"): void {
   getOrCreateReqIdStore(accountId).delete(chatId);
 }
 
 /**
- * 启动时预热 reqId 缓存（从磁盘加载到内存）
- * 
- * 注意：由于移除了磁盘存储，此函数现在只返回 0（无预热条目）
+ * Warm up the reqId cache at startup (load from disk into memory)
+ *
+ * Note: because disk storage was removed, this function now only returns 0 (no warmed entries)
  */
 export async function warmupReqIdStore(
   accountId = "default",
   log?: (...args: unknown[]) => void,
 ): Promise<number> {
-  // 由于移除了磁盘存储，不再需要预热过程
+  // Since disk storage was removed, a warmup process is no longer needed
   log?.("[WeCom] reqid-store warmup: no-op (disk storage removed)");
   return 0;
 }
 
 /**
- * 立即将 reqId 数据刷写到磁盘（用于优雅退出）
- * 
- * 注意：由于移除了磁盘存储，此函数现在是无操作
+ * Immediately flush reqId data to disk (for graceful shutdown)
+ *
+ * Note: Since disk storage has been removed, this function is a no-op
  */
 export async function flushReqIdStore(accountId = "default"): Promise<void> {
-  // 由于移除了磁盘存储，不再需要刷写操作
+  // Since disk storage has been removed, no flush operation is needed
 }
 
 // ============================================================================
-// 全局 cleanup（断开连接时释放所有资源）
+// Global cleanup (release all resources when disconnecting)
 // ============================================================================
 
 /**
- * 清理指定账户的所有资源
+ * Clean up all resources for the specified account
  */
 export async function cleanupAccount(accountId: string): Promise<void> {
-  // 1. 断开 WSClient
+  // 1. Disconnect WSClient
   const wsClient = wsClientInstances.get(accountId);
   if (wsClient) {
     try {
       wsClient.disconnect();
     } catch {
-      // 忽略断开连接时的错误
+      // Ignore errors while disconnecting
     }
     wsClientInstances.delete(accountId);
   }
 
-  // 2. 由于移除了磁盘存储，不再需要 flush reqId 存储
-  // 注意：不删除 store，因为重连后可能还需要
+  // 2. Since disk storage has been removed, no need to flush reqId storage
+  // Note: do not delete the store, as it may still be needed after reconnection
 }
 
 /**
- * 清理所有资源（用于进程退出）
+ * Clean up all resources (for process exit)
  */
 export async function cleanupAll(): Promise<void> {
-  // 停止定期清理
+  // Stop periodic cleanup
   stopMessageStateCleanup();
 
-  // 清理所有 WSClient
+  // Clean up all WSClient instances
   for (const [accountId, wsClient] of wsClientInstances) {
     try {
       wsClient.disconnect();
     } catch {
-      // 忽略
+      // Ignore
     }
   }
   wsClientInstances.clear();
 
-  // 由于移除了磁盘存储，不再需要 flush 所有 reqId 存储
+  // Since disk storage has been removed, no need to flush all reqId stores
 
-  // 清空消息状态
+  // Clear all message states
   clearAllMessageStates();
 }

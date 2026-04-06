@@ -1,38 +1,38 @@
 /**
- * 企业微信 DM（私聊）访问控制模块
+ * WeCom DM (direct message) access control module
  *
- * 负责私聊策略检查、配对流程
+ * Handles DM policy checks and pairing flow.
  */
 
-import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import type { WSClient, WsFrame } from "@wecom/aibot-node-sdk";
-import { getWeComRuntime } from "./runtime.js";
+import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
 import { CHANNEL_ID } from "./const.js";
-import type { ResolvedWeComAccount } from "./utils.js";
-import { sendWeComReply } from "./message-sender.js";
 import { isSenderAllowed } from "./group-policy.js";
+import { sendWeComReply } from "./message-sender.js";
+import { getWeComRuntime } from "./runtime.js";
+import type { ResolvedWeComAccount } from "./utils.js";
 
 // ============================================================================
-// 检查结果类型
+// Check result types
 // ============================================================================
 
 /**
- * DM Policy 检查结果
+ * DM policy check result
  */
 export interface DmPolicyCheckResult {
-  /** 是否允许继续处理消息 */
+  /** Whether the message is allowed to proceed */
   allowed: boolean;
-  /** 是否已发送配对消息（仅在 pairing 模式下） */
+  /** Whether a pairing message was sent (only in pairing mode) */
   pairingSent?: boolean;
 }
 
 // ============================================================================
-// 公开 API
+// Public API
 // ============================================================================
 
 /**
- * 检查 DM Policy 访问控制
- * @returns 检查结果，包含是否允许继续处理
+ * Check DM policy access control.
+ * @returns Check result indicating whether processing should continue
  */
 export async function checkDmPolicy(params: {
   senderId: string;
@@ -45,7 +45,7 @@ export async function checkDmPolicy(params: {
   const { senderId, isGroup, account, wsClient, frame, runtime } = params;
   const core = getWeComRuntime();
 
-  // 群聊消息不检查 DM Policy
+  // Group messages skip DM policy check
   if (isGroup) {
     return { allowed: true };
   }
@@ -53,26 +53,28 @@ export async function checkDmPolicy(params: {
   const dmPolicy = account.config.dmPolicy ?? "open";
   const configAllowFrom = (account.config.allowFrom ?? []).map((v) => String(v));
 
-  // 如果 dmPolicy 是 disabled，直接拒绝
+  // If dmPolicy is disabled, reject immediately
   if (dmPolicy === "disabled") {
     runtime.log?.(`[WeCom] Blocked DM from ${senderId} (dmPolicy=disabled)`);
     return { allowed: false };
   }
 
-  // 如果是 open 模式，允许所有人
+  // If open mode, allow everyone
   if (dmPolicy === "open") {
     return { allowed: true };
   }
 
   // OpenClaw <= 2026.2.19 signature: readAllowFromStore(channel, env?, accountId?)
-  // @ts-expect-error — 兼容旧版 SDK 的三参数签名，新版已改为单参数对象
-  const oldStoreAllowFrom = await core.channel.pairing.readAllowFromStore('wecom', undefined, account.accountId).catch(() => []);
+  const oldStoreAllowFrom = await core.channel.pairing
+    // @ts-expect-error — Compatibility with old SDK's three-argument signature; new version uses single object parameter
+    .readAllowFromStore("wecom", undefined, account.accountId)
+    .catch(() => []);
   // Compatibility fallback for newer OpenClaw implementations.
   const newStoreAllowFrom = await core.channel.pairing
-      .readAllowFromStore({ channel: CHANNEL_ID, accountId: account.accountId })
-      .catch(() => []);
+    .readAllowFromStore({ channel: CHANNEL_ID, accountId: account.accountId })
+    .catch(() => []);
 
-  // 检查发送者是否在允许列表中
+  // Check if the sender is in the allow list
   const storeAllowFrom = [...oldStoreAllowFrom, ...newStoreAllowFrom];
 
   const effectiveAllowFrom = [...configAllowFrom, ...storeAllowFrom];
@@ -82,7 +84,7 @@ export async function checkDmPolicy(params: {
     return { allowed: true };
   }
 
-  // 处理未授权用户
+  // Handle unauthorized users
   if (dmPolicy === "pairing") {
     const { code, created } = await core.channel.pairing.upsertPairingRequest({
       channel: CHANNEL_ID,
@@ -114,7 +116,7 @@ export async function checkDmPolicy(params: {
     return { allowed: false, pairingSent: created };
   }
 
-  // allowlist 模式：直接拒绝未授权用户
+  // Allowlist mode: reject unauthorized users directly
   runtime.log?.(`[WeCom] Blocked unauthorized sender ${senderId} (dmPolicy=${dmPolicy})`);
   return { allowed: false };
 }

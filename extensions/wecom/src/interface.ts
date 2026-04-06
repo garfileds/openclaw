@@ -1,81 +1,81 @@
 /**
- * 企业微信渠道类型定义
+ * WeCom channel type definitions
  */
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/core";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
-import type { ResolvedWeComAccount } from "./utils.js";
 import { WeComCommand } from "./const.js";
+import type { ResolvedWeComAccount } from "./utils.js";
 
 // ============================================================================
-// 运行时类型
+// Runtime types
 // ============================================================================
 
 /**
- * Monitor 配置选项
+ * Monitor configuration options
  */
 export type WeComMonitorOptions = {
   account: ResolvedWeComAccount;
   config: OpenClawConfig;
   runtime: RuntimeEnv;
   abortSignal?: AbortSignal;
-  /** 框架层提供的状态更新回调，用于在致命错误场景中标记 channel 已停止 */
+  /** Status update callback provided by the framework layer, used to mark channel as stopped in fatal error scenarios */
   setStatus?: (next: Record<string, unknown>) => void;
 };
 
 // ============================================================================
-// 内部状态类型
+// Internal state types
 // ============================================================================
 
 /**
- * 消息状态
+ * Message state
  */
 export interface MessageState {
   accumulatedText: string;
-  /** 流式回复的 streamId，用于保持同一个流式回复使用相同的 streamId */
+  /** Stream ID for streaming replies, used to keep the same stream ID for one streaming reply */
   streamId?: string;
-  // /** 是否有用户可见的文本内容（不包括 <think>...</think> 标签） */
+  // /** Whether there is user-visible text content (excluding <think>...</think> tags) */
   // hasText?: boolean;
-  /** 是否已成功发送过媒体文件 */
+  /** Whether a media file has been sent successfully */
   hasMedia?: boolean;
-  /** 是否有媒体发送失败（权限不足、文件过大等） */
+  /** Whether a media send failed (insufficient permissions, file too large, etc.) */
   hasMediaFailed?: boolean;
-  /** 媒体发送失败时的纯文本错误摘要（用于替换 thinking 流展示给用户） */
+  /** Plain text error summary when media send fails (used to replace thinking stream for user display) */
   mediaErrorSummary?: string;
-  // /** deliver 回调是否被调用过（用于区分"核心无回复"和"核心回复了空内容"） */
+  // /** Whether the deliver callback has been called (used to distinguish "core has no reply" from "core replied with empty content") */
   // deliverCalled?: boolean;
-  /** 流式回复是否已过期（errcode 846608，>6分钟），需降级为主动发送 */
+  /** Whether the streaming reply has expired (errcode 846608, >6 minutes), requiring downgrade to proactive send */
   streamExpired?: boolean;
-  /** 是否已成功发送过模板卡片 */
+  /** Whether a template card has been sent successfully */
   hasTemplateCard?: boolean;
 }
 
 // ============================================================================
-// 模板卡片类型
+// Template card types
 // ============================================================================
 
-/** 从文本中提取的模板卡片 */
+/** Template card extracted from text */
 export interface ExtractedTemplateCard {
-  /** 原始 JSON 对象（已验证 card_type 合法） */
+  /** Original JSON object (card_type has been validated) */
   cardJson: Record<string, unknown>;
-  /** card_type 值 */
+  /** card_type value */
   cardType: string;
 }
 
-/** extractTemplateCards 返回值 */
+/** Return value of extractTemplateCards */
 export interface TemplateCardExtractionResult {
-  /** 提取到的合法模板卡片列表 */
+  /** List of valid template cards extracted */
   cards: ExtractedTemplateCard[];
-  /** 移除卡片代码块后的剩余文本 */
+  /** Remaining text after removing card code blocks */
   remainingText: string;
 }
 
 // ============================================================================
-// WebSocket 消息类型
+// WebSocket message types
 // ============================================================================
 
 /**
- * WebSocket 请求消息基础格式
+ * WebSocket request message base format
  */
 export interface WeComRequest {
   cmd: string;
@@ -86,7 +86,7 @@ export interface WeComRequest {
 }
 
 /**
- * WebSocket 响应消息格式
+ * WebSocket response message format
  */
 export interface WeComResponse {
   headers: {
@@ -97,7 +97,7 @@ export interface WeComResponse {
 }
 
 /**
- * 企业微信认证请求
+ * WeCom auth request
  */
 export interface WeComSubscribeRequest extends WeComRequest {
   cmd: WeComCommand.SUBSCRIBE;
@@ -108,7 +108,7 @@ export interface WeComSubscribeRequest extends WeComRequest {
 }
 
 /**
- * 企业微信推送消息格式
+ * WeCom push message format
  */
 export interface WeComCallbackMessage {
   cmd: WeComCommand.AIBOT_CALLBACK | "aibot_event_callback";
@@ -129,13 +129,13 @@ export interface WeComCallbackMessage {
       content: string;
     };
     image?: {
-      /** 图片 URL（通过 URL 方式接收图片时） */
+      /** Image URL (when receiving images via URL) */
       url?: string;
-      /** 图片 base64 数据（直接传输时） */
+      /** Image base64 data (when transmitted directly) */
       base64?: string;
       md5?: string;
     };
-    /** 图文混排消息 */
+    /** Mixed content message (text + images) */
     mixed?: {
       msg_item: Array<{
         msgtype: "text" | "image";
@@ -186,7 +186,7 @@ export interface WeComCallbackMessage {
 }
 
 /**
- * 企业微信响应消息格式
+ * WeCom response message format
  */
 export interface WeComResponseMessage extends WeComRequest {
   cmd: WeComCommand.AIBOT_RESPONSE;

@@ -1,15 +1,15 @@
 /**
- * 视频第一帧提取（ffmpeg）
+ * Extract the first frame of a video (ffmpeg)
  *
- * 独立文件，避免 child_process 与网络请求在同一文件中触发安全扫描误报。
+ * Kept in a separate file to avoid false positives in security scans when child_process and network requests appear in the same file.
  */
 
 /**
- * 使用 ffmpeg 提取视频第一帧为 JPEG 图片。
+ * Use ffmpeg to extract the first frame of a video as a JPEG image.
  *
- * @param mediaPath 视频文件路径
- * @param timeoutMs 超时时间（默认 10s）
- * @returns 成功返回帧图片路径，失败或 ffmpeg 不可用返回 undefined
+ * @param mediaPath Path to the video file
+ * @param timeoutMs Timeout in milliseconds (default: 10s)
+ * @returns The frame image path on success; undefined on failure or if ffmpeg is unavailable
  */
 export async function extractVideoFirstFrame(
   mediaPath: string,

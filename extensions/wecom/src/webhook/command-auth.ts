@@ -1,8 +1,8 @@
 /**
- * 命令授权（Command Authorization）
+ * Command Authorization
  *
- * 从 lh 版 shared/command-auth.ts 迁移。
- * 适配新版 WeComConfig（dmPolicy / allowFrom 扁平化在顶层）。
+ * Migrated from the lh version shared/command-auth.ts.
+ * Adapted for the new WeComConfig (dmPolicy / allowFrom flattened at top level).
  */
 
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
@@ -10,10 +10,10 @@ import type { PluginRuntime } from "openclaw/plugin-sdk/core";
 import type { WeComConfig } from "../utils.js";
 
 // ============================================================================
-// 内部工具函数
+// Internal utility functions
 // ============================================================================
 
-/** 归一化白名单条目：去除空格、统一小写、去掉 wecom:/user:/userid: 前缀 */
+/** Normalize allowlist entry: trim whitespace, lowercase, strip wecom:/user:/userid: prefixes */
 function normalizeWecomAllowFromEntry(raw: string): string {
   return raw
     .trim()
@@ -23,7 +23,7 @@ function normalizeWecomAllowFromEntry(raw: string): string {
     .replace(/^userid:/, "");
 }
 
-/** 判断发送者是否在白名单中 */
+/** Check if the sender is in the allowlist */
 function isWecomSenderAllowed(senderUserId: string, allowFrom: string[]): boolean {
   const list = allowFrom.map((entry) => normalizeWecomAllowFromEntry(entry)).filter(Boolean);
   if (list.includes("*")) return true;
@@ -33,29 +33,29 @@ function isWecomSenderAllowed(senderUserId: string, allowFrom: string[]): boolea
 }
 
 // ============================================================================
-// 命令授权解析
+// Command authorization resolution
 // ============================================================================
 
-/** 命令授权结果 */
+/** Command authorization result */
 export interface WecomCommandAuthResult {
-  /** 当前消息是否是需要鉴权的命令 */
+  /** Whether the current message is a command requiring authorization */
   shouldComputeAuth: boolean;
-  /** 账号配置的私信策略 */
+  /** DM policy configured for the account */
   dmPolicy: "pairing" | "allowlist" | "open" | "disabled";
-  /** 当前发送者是否在白名单中 */
+  /** Whether the current sender is in the allowlist */
   senderAllowed: boolean;
-  /** 是否配置了授权器 */
+  /** Whether an authorizer is configured */
   authorizerConfigured: boolean;
-  /** 最终授权结果：true=放行，false=拒绝，undefined=不需要鉴权 */
+  /** Final authorization result: true=allow, false=deny, undefined=no auth needed */
   commandAuthorized: boolean | undefined;
-  /** 生效的白名单列表 */
+  /** Effective allowlist */
   effectiveAllowFrom: string[];
 }
 
 /**
- * 解析命令授权状态
+ * Resolve command authorization status
  *
- * 适配新版 WeComConfig 的扁平化字段：
+ * Adapted for the new WeComConfig flattened fields:
  * - dmPolicy → accountConfig.dmPolicy
  * - allowFrom → accountConfig.allowFrom
  */
@@ -77,12 +77,12 @@ export async function resolveWecomCommandAuthorization(params: {
 
   const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(rawBody, cfg);
 
-  // WeCom channel 不支持 pairing CLI（"Channel wecom does not support pairing"），
-  // 因此 pairing 策略等同于 allowlist。
-  // Policy 语义：
-  // - open: 命令对所有人放行（除非更高层级的 access-groups 拒绝）
-  // - allowlist: 命令需要 allowFrom 白名单
-  // - pairing: 等同 allowlist（因 WeCom 不支持 pairing CLI）
+  // WeCom channel does not support pairing CLI ("Channel wecom does not support pairing"),
+  // so pairing policy is equivalent to allowlist.
+  // Policy semantics:
+  // - open: commands are allowed for everyone (unless higher-level access-groups deny)
+  // - allowlist: commands require allowFrom allowlist
+  // - pairing: equivalent to allowlist (since WeCom does not support pairing CLI)
   const effectiveAllowFrom = dmPolicy === "open" ? ["*"] : configAllowFrom;
 
   const senderAllowed = isWecomSenderAllowed(senderUserId, effectiveAllowFrom);
@@ -110,13 +110,13 @@ export async function resolveWecomCommandAuthorization(params: {
 }
 
 // ============================================================================
-// 未授权提示文案构建
+// Unauthorized command prompt builder
 // ============================================================================
 
 /**
- * 构建未授权命令的中文提示文案
+ * Build a Chinese prompt for unauthorized commands
  *
- * @param scope - "bot"（智能机器人）或 "agent"（自建应用）
+ * @param scope - "bot" (smart bot) or "agent" (self-built app)
  */
 export function buildWecomUnauthorizedCommandPrompt(params: {
   senderUserId: string;

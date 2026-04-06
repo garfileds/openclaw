@@ -3,29 +3,30 @@ type QueueStatus = "queued" | "immediate";
 const chatQueues = new Map<string, Promise<void>>();
 
 /**
- * 构建队列键
+ * Build a queue key.
  *
- * 使用 accountId + chatId 作为维度，确保同一会话中的消息串行处理。
- * 不同会话之间互不影响，可以并行处理。
+ * Uses accountId + chatId as the dimension to ensure messages within the same
+ * conversation are processed serially. Different conversations are independent
+ * and can be processed in parallel.
  */
 export function buildQueueKey(accountId: string, chatId: string): string {
   return `${accountId}:${chatId}`;
 }
 
 /**
- * 检查指定会话是否有正在处理的任务
+ * Check whether the specified conversation has an active task.
  */
 export function hasActiveTask(key: string): boolean {
   return chatQueues.has(key);
 }
 
 /**
- * 将任务加入串行队列
+ * Enqueue a task into the serial queue.
  *
- * 如果队列中已有任务（status="queued"），新任务会排队等待；
- * 如果队列为空（status="immediate"），任务立即执行。
+ * If there is already a task in the queue (status="queued"), the new task waits in line;
+ * if the queue is empty (status="immediate"), the task executes immediately.
  *
- * 即使前一个任务失败，后续任务仍会继续执行（.then(task, task)）。
+ * Even if the previous task fails, subsequent tasks will still execute (.then(task, task)).
  */
 export function enqueueWeComChatTask(params: {
   accountId: string;
@@ -42,7 +43,7 @@ export function enqueueWeComChatTask(params: {
   chatQueues.set(key, next);
 
   const cleanup = (): void => {
-    // 只有当前任务仍是队列末尾时才清理，避免误删后续任务
+    // Only clean up when the current task is still the tail of the queue, to avoid deleting subsequent tasks
     if (chatQueues.get(key) === next) {
       chatQueues.delete(key);
     }
@@ -53,7 +54,7 @@ export function enqueueWeComChatTask(params: {
   return { status, promise: next };
 }
 
-/** @internal 测试专用：重置所有队列状态 */
+/** @internal Test-only: reset all queue state */
 export function _resetChatQueueState(): void {
   chatQueues.clear();
 }
