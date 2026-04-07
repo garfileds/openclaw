@@ -55,12 +55,16 @@ async function interceptMediaResponse(result: unknown): Promise<unknown> {
 
   // 1. Extract the content array from the MCP result
   const content = (result as Record<string, unknown>)?.content;
-  if (!Array.isArray(content)) return result;
+  if (!Array.isArray(content)) {
+    return result;
+  }
 
   const textItem = content.find(
     (c: Record<string, unknown>) => c.type === "text" && typeof c.text === "string",
   ) as { type: string; text: string } | undefined;
-  if (!textItem) return result;
+  if (!textItem) {
+    return result;
+  }
 
   // 2. Parse the business JSON
   let bizData: Record<string, unknown>;
@@ -72,12 +76,16 @@ async function interceptMediaResponse(result: unknown): Promise<unknown> {
   }
 
   // 3. Validate the business response: return as-is if errcode !== 0 or media_item is missing
-  if (bizData.errcode !== 0) return result;
+  if (bizData.errcode !== 0) {
+    return result;
+  }
 
   const mediaItem = bizData.media_item as Record<string, unknown> | undefined;
-  if (!mediaItem || typeof mediaItem.base64_data !== "string") return result;
+  if (!mediaItem || typeof mediaItem.base64_data !== "string") {
+    return result;
+  }
 
-  const base64Data = mediaItem.base64_data as string;
+  const base64Data = mediaItem.base64_data;
   const mediaName = mediaItem.name as string | undefined;
   const mediaType = mediaItem.type as string | undefined;
   const mediaId = mediaItem.media_id as string | undefined;

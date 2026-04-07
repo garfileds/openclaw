@@ -42,14 +42,19 @@ export function extractFromUser(msg: WecomAgentInboundMessage): string {
  */
 export function extractFileName(msg: WecomAgentInboundMessage): string | undefined {
   const raw =
-    (msg as any).FileName ??
-    (msg as any).Filename ??
-    (msg as any).fileName ??
-    (msg as any).filename;
-  if (raw == null) return undefined;
-  if (typeof raw === "string") return raw.trim() || undefined;
-  if (typeof raw === "number" || typeof raw === "boolean" || typeof raw === "bigint")
+    (msg as unknown).FileName ??
+    (msg as unknown).Filename ??
+    (msg as unknown).fileName ??
+    (msg as unknown).filename;
+  if (raw == null) {
+    return undefined;
+  }
+  if (typeof raw === "string") {
+    return raw.trim() || undefined;
+  }
+  if (typeof raw === "number" || typeof raw === "boolean" || typeof raw === "bigint") {
     return String(raw);
+  }
   if (Array.isArray(raw)) {
     const merged = raw
       .map((v) => (v == null ? "" : String(v)))
@@ -67,7 +72,9 @@ export function extractFileName(msg: WecomAgentInboundMessage): string | undefin
           : typeof obj["text"] === "string"
             ? obj["text"]
             : undefined;
-    if (text && text.trim()) return text.trim();
+    if (text && text.trim()) {
+      return text.trim();
+    }
   }
   const s = String(raw);
   return s.trim() || undefined;
@@ -92,10 +99,19 @@ export function extractChatId(msg: WecomAgentInboundMessage): string | undefined
  */
 export function extractAgentId(msg: WecomAgentInboundMessage): string | number | undefined {
   const raw =
-    (msg as any).AgentID ?? (msg as any).AgentId ?? (msg as any).agentid ?? (msg as any).agentId;
-  if (raw == null) return undefined;
-  if (typeof raw === "string") return raw.trim() || undefined;
-  if (typeof raw === "number") return raw;
+    (msg as unknown).AgentID ??
+    (msg as unknown).AgentId ??
+    (msg as unknown).agentid ??
+    (msg as unknown).agentId;
+  if (raw == null) {
+    return undefined;
+  }
+  if (typeof raw === "string") {
+    return raw.trim() || undefined;
+  }
+  if (typeof raw === "number") {
+    return raw;
+  }
   const asString = String(raw).trim();
   return asString || undefined;
 }
@@ -107,23 +123,38 @@ export function extractContent(msg: WecomAgentInboundMessage): string {
   const msgType = extractMsgType(msg);
 
   const asText = (value: unknown): string => {
-    if (value == null) return "";
-    if (typeof value === "string") return value;
-    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint")
+    if (value == null) {
+      return "";
+    }
+    if (typeof value === "string") {
+      return value;
+    }
+    if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
       return String(value);
-    if (Array.isArray(value)) return value.map(asText).filter(Boolean).join("\n");
+    }
+    if (Array.isArray(value)) {
+      return value.map(asText).filter(Boolean).join("\n");
+    }
     if (typeof value === "object") {
       const obj = value as Record<string, unknown>;
       // fast-xml-parser may put text in "#text" in certain cases (e.g. with attributes)
-      if (typeof obj["#text"] === "string") return obj["#text"];
-      if (typeof obj["_text"] === "string") return obj["_text"];
-      if (typeof obj["text"] === "string") return obj["text"];
+      if (typeof obj["#text"] === "string") {
+        return obj["#text"];
+      }
+      if (typeof obj["_text"] === "string") {
+        return obj["_text"];
+      }
+      if (typeof obj["text"] === "string") {
+        return obj["text"];
+      }
       try {
         return JSON.stringify(obj);
       } catch {
+        // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
         return String(value);
       }
     }
+    // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
     return String(value);
   };
 
@@ -156,11 +187,19 @@ export function extractContent(msg: WecomAgentInboundMessage): string {
  */
 export function extractMediaId(msg: WecomAgentInboundMessage): string | undefined {
   const raw =
-    (msg as any).MediaId ?? (msg as any).MediaID ?? (msg as any).mediaid ?? (msg as any).mediaId;
-  if (raw == null) return undefined;
-  if (typeof raw === "string") return raw.trim() || undefined;
-  if (typeof raw === "number" || typeof raw === "boolean" || typeof raw === "bigint")
+    (msg as unknown).MediaId ??
+    (msg as unknown).MediaID ??
+    (msg as unknown).mediaid ??
+    (msg as unknown).mediaId;
+  if (raw == null) {
+    return undefined;
+  }
+  if (typeof raw === "string") {
+    return raw.trim() || undefined;
+  }
+  if (typeof raw === "number" || typeof raw === "boolean" || typeof raw === "bigint") {
     return String(raw);
+  }
   if (Array.isArray(raw)) {
     const merged = raw
       .map((v) => (v == null ? "" : String(v)))
@@ -178,7 +217,9 @@ export function extractMediaId(msg: WecomAgentInboundMessage): string | undefine
           : typeof obj["text"] === "string"
             ? obj["text"]
             : undefined;
-    if (text && text.trim()) return text.trim();
+    if (text && text.trim()) {
+      return text.trim();
+    }
     try {
       const s = JSON.stringify(obj);
       return s.trim() || undefined;
@@ -195,11 +236,20 @@ export function extractMediaId(msg: WecomAgentInboundMessage): string | undefine
  * Extracts MsgId from XML (used for deduplication)
  */
 export function extractMsgId(msg: WecomAgentInboundMessage): string | undefined {
-  const raw = (msg as any).MsgId ?? (msg as any).MsgID ?? (msg as any).msgid ?? (msg as any).msgId;
-  if (raw == null) return undefined;
-  if (typeof raw === "string") return raw.trim() || undefined;
-  if (typeof raw === "number" || typeof raw === "boolean" || typeof raw === "bigint")
+  const raw =
+    (msg as unknown).MsgId ??
+    (msg as unknown).MsgID ??
+    (msg as unknown).msgid ??
+    (msg as unknown).msgId;
+  if (raw == null) {
+    return undefined;
+  }
+  if (typeof raw === "string") {
+    return raw.trim() || undefined;
+  }
+  if (typeof raw === "number" || typeof raw === "boolean" || typeof raw === "bigint") {
     return String(raw);
+  }
   if (Array.isArray(raw)) {
     const merged = raw
       .map((v) => (v == null ? "" : String(v)))
@@ -217,7 +267,9 @@ export function extractMsgId(msg: WecomAgentInboundMessage): string | undefined 
           : typeof obj["text"] === "string"
             ? obj["text"]
             : undefined;
-    if (text && text.trim()) return text.trim();
+    if (text && text.trim()) {
+      return text.trim();
+    }
     try {
       const s = JSON.stringify(obj);
       return s.trim() || undefined;

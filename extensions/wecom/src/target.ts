@@ -38,7 +38,9 @@ export interface WecomTarget {
  * @param raw - The raw target string (e.g. "party:1", "zhangsan", "wecom:wr123")
  */
 export function resolveWecomTarget(raw: string | undefined): WecomTarget | undefined {
-  if (!raw?.trim()) return undefined;
+  if (!raw?.trim()) {
+    return undefined;
+  }
 
   // 1. Remove standard namespace prefixes
   let clean = raw.trim().replace(/^(wecom-agent|wecom|wechatwork|wework|qywx):/i, "");

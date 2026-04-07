@@ -47,24 +47,32 @@ const recentAgentMsgIds = new Map<string, number>();
 function rememberAgentMsgId(msgId: string): boolean {
   const now = Date.now();
   const existing = recentAgentMsgIds.get(msgId);
-  if (existing && now - existing < RECENT_MSGID_TTL_MS) return false;
+  if (existing && now - existing < RECENT_MSGID_TTL_MS) {
+    return false;
+  }
   recentAgentMsgIds.set(msgId, now);
   // Simple cleanup: perform a linear prune on write to prevent unbounded growth
   for (const [k, ts] of recentAgentMsgIds) {
-    if (now - ts >= RECENT_MSGID_TTL_MS) recentAgentMsgIds.delete(k);
+    if (now - ts >= RECENT_MSGID_TTL_MS) {
+      recentAgentMsgIds.delete(k);
+    }
   }
   return true;
 }
 
 function looksLikeTextFile(buffer: Buffer): boolean {
   const sampleSize = Math.min(buffer.length, 4096);
-  if (sampleSize === 0) return true;
+  if (sampleSize === 0) {
+    return true;
+  }
   let bad = 0;
   for (let i = 0; i < sampleSize; i++) {
-    const b = buffer[i]!;
+    const b = buffer[i];
     const isWhitespace = b === 0x09 || b === 0x0a || b === 0x0d; // \t \n \r
     const isPrintable = b >= 0x20 && b !== 0x7f;
-    if (!isWhitespace && !isPrintable) bad++;
+    if (!isWhitespace && !isPrintable) {
+      bad++;
+    }
   }
   // High ratio of non-printable characters indicates binary content
   return bad / sampleSize <= 0.02;
@@ -76,27 +84,37 @@ function analyzeTextHeuristic(buffer: Buffer): {
   badRatio: number;
 } {
   const sampleSize = Math.min(buffer.length, 4096);
-  if (sampleSize === 0) return { sampleSize: 0, badCount: 0, badRatio: 0 };
+  if (sampleSize === 0) {
+    return { sampleSize: 0, badCount: 0, badRatio: 0 };
+  }
   let badCount = 0;
   for (let i = 0; i < sampleSize; i++) {
-    const b = buffer[i]!;
+    const b = buffer[i];
     const isWhitespace = b === 0x09 || b === 0x0a || b === 0x0d;
     const isPrintable = b >= 0x20 && b !== 0x7f;
-    if (!isWhitespace && !isPrintable) badCount++;
+    if (!isWhitespace && !isPrintable) {
+      badCount++;
+    }
   }
   return { sampleSize, badCount, badRatio: badCount / sampleSize };
 }
 
 function previewHex(buffer: Buffer, maxBytes = 32): string {
   const n = Math.min(buffer.length, maxBytes);
-  if (n <= 0) return "";
+  if (n <= 0) {
+    return "";
+  }
   return buffer.subarray(0, n).toString("hex").replace(/(..)/g, "$1 ").trim();
 }
 
 function buildTextFilePreview(buffer: Buffer, maxChars: number): string | undefined {
-  if (!looksLikeTextFile(buffer)) return undefined;
+  if (!looksLikeTextFile(buffer)) {
+    return undefined;
+  }
   const text = buffer.toString("utf8");
-  if (!text.trim()) return undefined;
+  if (!text.trim()) {
+    return undefined;
+  }
   const truncated = text.length > maxChars ? `${text.slice(0, maxChars)}\n…(已截断)` : text;
   return truncated;
 }
@@ -189,9 +207,14 @@ export function shouldProcessAgentInboundMessage(params: {
 }
 
 function normalizeAgentId(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
   const raw = String(value ?? "").trim();
-  if (!raw) return undefined;
+  if (!raw) {
+    return undefined;
+  }
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
@@ -254,6 +277,7 @@ async function handleMessageCallback(params: AgentWebhookParams): Promise<boolea
     const fromUser = extractFromUser(msg);
     const chatId = extractChatId(msg);
     const msgId = extractMsgId(msg);
+    // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
     const eventType = String((msg as Record<string, unknown>).Event ?? "")
       .trim()
       .toLowerCase();
@@ -349,7 +373,7 @@ async function processAgentMessage(params: {
   const mediaMaxBytes = resolveWecomMediaMaxBytes(config);
 
   // Process media files
-  const attachments: any[] = []; // TODO: define specific type
+  const attachments: unknown[] = []; // TODO: define specific type
   let finalContent = content;
   let mediaPath: string | undefined;
   let mediaType: string | undefined;
@@ -388,7 +412,7 @@ async function processAgentMessage(params: {
               : contentType;
 
         const ext = extMap[normalizedContentType] || (looksText ? "txt" : "bin");
-        const filename = `${mediaId}.${ext}`;
+        const _filename = `${mediaId}.${ext}`;
 
         log?.(
           `[wecom-agent] file meta: msgType=${msgType} mediaId=${mediaId} size=${buffer.length} maxBytes=${mediaMaxBytes} ` +
@@ -593,12 +617,16 @@ async function processAgentMessage(params: {
         let _mdMatch: RegExpExecArray | null;
         while ((_mdMatch = mediaDirectiveRe.exec(text)) !== null) {
           let p = (_mdMatch[1] ?? "").trim();
-          if (!p) continue;
+          if (!p) {
+            continue;
+          }
           if (p.startsWith("~/") || p === "~") {
             const home = os.homedir() || "/root";
             p = p.replace(/^~/, home);
           }
-          if (!mediaDirectivePaths.includes(p)) mediaDirectivePaths.push(p);
+          if (!mediaDirectivePaths.includes(p)) {
+            mediaDirectivePaths.push(p);
+          }
         }
         // Remove MEDIA: directive lines from the reply text
         if (mediaDirectivePaths.length > 0) {
@@ -627,7 +655,8 @@ async function processAgentMessage(params: {
           } catch (err: unknown) {
             const message =
               err instanceof Error
-                ? `${err.message}${err.cause ? ` (cause: ${String(err.cause)})` : ""}`
+                ? // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
+                  `${err.message}${err.cause ? ` (cause: ${String(String(err.cause))})` : ""}`
                 : String(err);
             error?.(`[wecom-agent] reply failed: ${message}`);
           }
@@ -643,7 +672,9 @@ async function processAgentMessage(params: {
 
             if (isRemoteUrl) {
               const res = await fetch(mediaPath, { signal: AbortSignal.timeout(30_000) });
-              if (!res.ok) throw new Error(`download failed: ${res.status}`);
+              if (!res.ok) {
+                throw new Error(`download failed: ${res.status}`);
+              }
               buf = Buffer.from(await res.arrayBuffer());
               contentType = res.headers.get("content-type") || "application/octet-stream";
               filename = new URL(mediaPath).pathname.split("/").pop() || "media";
@@ -679,9 +710,13 @@ async function processAgentMessage(params: {
 
             // 确定企微媒体类型
             let mediaType: "image" | "voice" | "video" | "file" = "file";
-            if (contentType.startsWith("image/")) mediaType = "image";
-            else if (contentType.startsWith("audio/")) mediaType = "voice";
-            else if (contentType.startsWith("video/")) mediaType = "video";
+            if (contentType.startsWith("image/")) {
+              mediaType = "image";
+            } else if (contentType.startsWith("audio/")) {
+              mediaType = "voice";
+            } else if (contentType.startsWith("video/")) {
+              mediaType = "video";
+            }
 
             log?.(
               `[wecom-agent] uploading media: ${filename} (${mediaType}, ${contentType}, ${buf.length} bytes)`,
@@ -703,7 +738,8 @@ async function processAgentMessage(params: {
           } catch (err: unknown) {
             const message =
               err instanceof Error
-                ? `${err.message}${err.cause ? ` (cause: ${String(err.cause)})` : ""}`
+                ? // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
+                  `${err.message}${err.cause ? ` (cause: ${String(String(err.cause))})` : ""}`
                 : String(err);
             error?.(`[wecom-agent] media send failed: ${mediaPath}: ${message}`);
             // Fallback: send text notification to user

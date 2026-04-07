@@ -53,7 +53,9 @@ export async function resolveBeforeCall(ctx: CallContext): Promise<ResolvedBefor
   let mergedArgs: Record<string, unknown> | undefined;
 
   for (const interceptor of interceptors) {
-    if (!interceptor.match(ctx) || !interceptor.beforeCall) continue;
+    if (!interceptor.match(ctx) || !interceptor.beforeCall) {
+      continue;
+    }
 
     const opts = await interceptor.beforeCall(ctx);
     if (opts?.timeoutMs !== undefined) {
@@ -81,7 +83,9 @@ export async function runAfterCall(ctx: CallContext, result: unknown): Promise<u
   let current = result;
 
   for (const interceptor of interceptors) {
-    if (!interceptor.match(ctx) || !interceptor.afterCall) continue;
+    if (!interceptor.match(ctx) || !interceptor.afterCall) {
+      continue;
+    }
     current = await interceptor.afterCall(ctx, current);
   }
 

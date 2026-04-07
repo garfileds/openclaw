@@ -56,6 +56,7 @@ interface SdkExports {
 }
 
 const _sdkReady: Promise<SdkExports> = import("openclaw/plugin-sdk/core")
+  // oxlint-disable-next-line typescript/no-explicit-any -- dynamic SDK import with unknown shape
   .then((sdk: any) => {
     const exports: SdkExports = {};
     if (typeof sdk.loadOutboundMediaFromUrl === "function") {
@@ -81,6 +82,7 @@ const _sdkReady: Promise<SdkExports> = import("openclaw/plugin-sdk/core")
 let _cachedAddWildcardAllowFrom: ((allowFrom: string[]) => string[]) | undefined;
 
 const _setupSdkReady: Promise<void> = import("openclaw/plugin-sdk/setup")
+  // oxlint-disable-next-line typescript/no-explicit-any -- dynamic SDK import with unknown shape
   .then((sdk: any) => {
     if (typeof sdk.addWildcardAllowFrom === "function") {
       _cachedAddWildcardAllowFrom = sdk.addWildcardAllowFrom;
@@ -91,7 +93,7 @@ const _setupSdkReady: Promise<void> = import("openclaw/plugin-sdk/setup")
   });
 
 // Also cache the result from the core module
-_sdkReady.then((sdk) => {
+void _sdkReady.then((sdk) => {
   if (!_cachedAddWildcardAllowFrom && sdk.addWildcardAllowFrom) {
     _cachedAddWildcardAllowFrom = sdk.addWildcardAllowFrom;
   }
@@ -278,7 +280,9 @@ async function fetchRemoteMedia(
     try {
       const parsed = new URL(url);
       const base = path.basename(parsed.pathname);
-      if (base && base.includes(".")) fileName = base;
+      if (base && base.includes(".")) {
+        fileName = base;
+      }
     } catch {
       /* ignore */
     }
@@ -349,9 +353,14 @@ async function loadOutboundMediaFromUrlFallback(
     } finally {
       await fh.close();
     }
-  } catch (err: any) {
-    if (err?.code === "ENOENT") {
-      throw new Error(`Local media file not found: ${mediaUrl}`);
+  } catch (err: unknown) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as Record<string, unknown>).code === "ENOENT"
+    ) {
+      throw new Error(`Local media file not found: ${mediaUrl}`, { cause: err });
     }
     throw err;
   }
@@ -595,9 +604,9 @@ function buildAccountScopedDmSecurityPolicyFallback(
   const DEFAULT_ACCOUNT = "default";
   const resolvedAccountId = params.accountId ?? params.fallbackAccountId ?? DEFAULT_ACCOUNT;
 
-  const channelConfig = (params.cfg.channels as Record<string, unknown> | undefined)?.[
-    params.channelKey
-  ] as { accounts?: Record<string, unknown> } | undefined;
+  const channelConfig = params.cfg.channels?.[params.channelKey] as
+    | { accounts?: Record<string, unknown> }
+    | undefined;
 
   const useAccountPath = Boolean(channelConfig?.accounts?.[resolvedAccountId]);
   const basePath = useAccountPath
@@ -631,8 +640,10 @@ const _sdkPolicyReady: Promise<{
   try {
     // 尝试从主 SDK 包导入
     const sdk = await import("openclaw/plugin-sdk/channel-policy");
+    // oxlint-disable-next-line typescript/no-explicit-any -- dynamic SDK import with unknown shape
     if (typeof (sdk as any).buildAccountScopedDmSecurityPolicy === "function") {
       return {
+        // oxlint-disable-next-line typescript/no-explicit-any -- dynamic SDK import with unknown shape
         buildAccountScopedDmSecurityPolicy: (sdk as any).buildAccountScopedDmSecurityPolicy,
       };
     }

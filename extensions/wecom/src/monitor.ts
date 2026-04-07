@@ -46,7 +46,11 @@ import type { WeComMonitorOptions, MessageState } from "./interface.js";
 import { downloadAndSaveImages, downloadAndSaveFiles } from "./media-handler.js";
 import { uploadAndSendMedia } from "./media-uploader.js";
 import { parseMessageContent, type MessageBody } from "./message-parser.js";
-import { sendWeComReply, sendWeComReplyNonBlocking, StreamExpiredError } from "./message-sender.js";
+import {
+  sendWeComReply,
+  _sendWeComReplyNonBlocking,
+  StreamExpiredError,
+} from "./message-sender.js";
 import { getDefaultMediaLocalRoots, resolveStateDir } from "./openclaw-compat.js";
 import { getWeComRuntime } from "./runtime.js";
 import {
@@ -218,8 +222,8 @@ function buildMessageContext(
     chatType: chatType === "group" ? "group" : "dm",
     chatId,
     senderId: body.from.userid,
-    log: runtime?.log ? (...args: any[]) => runtime.log?.(...args) : undefined,
-    error: runtime?.error ? (...args: any[]) => runtime.error?.(...args) : undefined,
+    log: runtime?.log ? (...args: unknown[]) => runtime.log?.(...args) : undefined,
+    error: runtime?.error ? (...args: unknown[]) => runtime.error?.(...args) : undefined,
   });
 
   // Apply dynamic routing result
@@ -366,8 +370,8 @@ async function sendMediaBatch(ctx: DeliverContext, mediaUrls: string[]): Promise
       mediaUrl,
       chatId,
       mediaLocalRoots,
-      log: (...args: any[]) => runtime.log?.(...args),
-      errorLog: (...args: any[]) => runtime.error?.(...args),
+      log: (...args: unknown[]) => runtime.log?.(...args),
+      errorLog: (...args: unknown[]) => runtime.error?.(...args),
     });
 
     if (result.ok) {
@@ -552,7 +556,7 @@ async function routeAndDispatchMessage(params: {
 
           // 累积文本
           if (payload.text) {
-            state.accumulatedText += `${payload.text || ""}`;
+            state.accumulatedText += payload.text || "";
           }
 
           // Send media (all via proactive send)
@@ -582,8 +586,9 @@ async function routeAndDispatchMessage(params: {
           // preventing JSON source from being exposed to end users during stream output
           if (state.accumulatedText && !state.streamExpired) {
             try {
-              const displayText = maskTemplateCardBlocks(state.accumulatedText, (...args: any[]) =>
-                runtime.log?.(...args),
+              const displayText = maskTemplateCardBlocks(
+                state.accumulatedText,
+                (...args: unknown[]) => runtime.log?.(...args),
               );
               // if (displayText !== state.accumulatedText) {
               //   runtime.log?.(`[wecom][template-card] Mid-frame masked: original=${state.accumulatedText.length}chars, masked=${displayText.length}chars`);
@@ -839,16 +844,16 @@ async function processWeComMessageNow(entry: WeComMessageEntry): Promise<void> {
  */
 function createSdkLogger(runtime: RuntimeEnv, accountId: string): Logger {
   return {
-    debug: (message: string, ...args: any[]) => {
+    debug: (message: string, ...args: unknown[]) => {
       runtime.log?.(`[${accountId}] ${message}`, ...args);
     },
-    info: (message: string, ...args: any[]) => {
+    info: (message: string, ...args: unknown[]) => {
       runtime.log?.(`[${accountId}] ${message}`, ...args);
     },
-    warn: (message: string, ...args: any[]) => {
+    warn: (message: string, ...args: unknown[]) => {
       runtime.log?.(`[${accountId}] WARN: ${message}`, ...args);
     },
-    error: (message: string, ...args: any[]) => {
+    error: (message: string, ...args: unknown[]) => {
       runtime.error?.(`[${accountId}] ${message}`, ...args);
     },
   };
@@ -890,7 +895,9 @@ export async function monitorWeComProvider(options: WeComMonitorOptions): Promis
 
     // Cleanup function: ensure all resources are released (idempotent)
     const cleanup = async () => {
-      if (cleanedUp) return;
+      if (cleanedUp) {
+        return;
+      }
       cleanedUp = true;
       stopMessageStateCleanup();
       await cleanupAccount(account.accountId);
@@ -1003,19 +1010,17 @@ export async function monitorWeComProvider(options: WeComMonitorOptions): Promis
         // 显式调用 wsClient.disconnect() 确保 SDK 内部资源完全释放，
         // 避免旧实例的定时器/队列残留。
         wsClient.disconnect();
-        cleanup().finally(() => reject(error));
+        void cleanup().finally(() => reject(error));
         return;
       }
     });
 
     // 监听版本检查事件：收到 enter_check_update 时回复当前插件版本
-    wsClient.on(EVENT_ENTER_CHECK_UPDATE as any, async (frame: WsFrame) => {
+    wsClient.on(EVENT_ENTER_CHECK_UPDATE as unknown, async (frame: WsFrame) => {
       try {
         // runtime.log?.(`[${account.accountId}] Received enter_check_update, replying with version=${PLUGIN_VERSION}`);
         await wsClient.reply(frame, { version: PLUGIN_VERSION }, CMD_ENTER_EVENT_REPLY);
-      } catch (err) {
-        // runtime.error?.(`[${account.accountId}] Failed to reply enter_check_update: ${String(err)}`);
-      }
+      } catch {}
     });
 
     // Listen for regular messages
@@ -1028,7 +1033,9 @@ export async function monitorWeComProvider(options: WeComMonitorOptions): Promis
           runtime,
           wsClient,
         });
-        if (!entry) return;
+        if (!entry) {
+          return;
+        }
 
         // Queue logic temporarily disabled, process messages directly
         // const { status } = enqueueWeComChatTask({

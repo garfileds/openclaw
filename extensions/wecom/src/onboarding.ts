@@ -110,7 +110,7 @@ export const wecomSetupWizard: ChannelSetupWizard = {
       const account = resolveWeComAccountMulti({ cfg });
       return Boolean(account.botId?.trim() && account.secret?.trim());
     },
-    resolveStatusLines: ({ cfg, configured }) => {
+    resolveStatusLines: ({ _cfg, configured }) => {
       return [`企业微信: ${configured ? "已配置" : "需要 Bot ID 和 Secret"}`];
     },
   },

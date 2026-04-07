@@ -44,7 +44,7 @@ function pruneTemplateCardCache(): void {
     return;
   }
 
-  const sortedEntries = [...sentTemplateCardByTaskId.entries()].sort(
+  const sortedEntries = [...sentTemplateCardByTaskId.entries()].toSorted(
     (a, b) => a[1].createdAt - b[1].createdAt,
   );
   const removeCount = sentTemplateCardByTaskId.size - TEMPLATE_CARD_CACHE_MAX_SIZE;
@@ -234,7 +234,7 @@ export async function sendTemplateCards(params: {
         `[wecom][template-card] Sending card_type=${card.cardType} to chatId=${chatId}`,
       );
 
-      const rawTemplateCard = card.cardJson as Record<string, unknown>;
+      const rawTemplateCard = card.cardJson;
       if (typeof rawTemplateCard.card_type !== "string") {
         runtime.error?.("[wecom][template-card] Skip sending invalid card: missing card_type");
         continue;
@@ -289,7 +289,7 @@ export async function processTemplateCardsIfNeeded(params: {
   runtime.log?.(
     `[wecom][template-card] processTemplateCardsIfNeeded: visibleText exists, length=${visibleText.length}, running extractTemplateCards...`,
   );
-  const logFn = (...args: any[]): void => {
+  const logFn = (...args: unknown[]): void => {
     runtime.log?.(...args);
   };
   const { cards, remainingText } = extractTemplateCards(state.accumulatedText, logFn);

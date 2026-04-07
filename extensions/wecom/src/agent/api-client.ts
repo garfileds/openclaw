@@ -8,7 +8,7 @@ import { readResponseBodyAsBuffer, wecomFetch } from "../http.js";
 import { API_ENDPOINTS, LIMITS } from "../types/constants.js";
 import type { ResolvedAgentAccount } from "../types/index.js";
 
-function resolveWecomEgressProxyUrlFromNetwork(network: any): string | undefined {
+function resolveWecomEgressProxyUrlFromNetwork(network: unknown): string | undefined {
   return network?.egressProxyUrl;
 }
 
@@ -30,12 +30,14 @@ const tokenCaches = new Map<string, TokenCache>();
 
 function normalizeUploadFilename(filename: string): string {
   const trimmed = filename.trim();
-  if (!trimmed) return "file.bin";
+  if (!trimmed) {
+    return "file.bin";
+  }
   const ext = trimmed.includes(".") ? `.${trimmed.split(".").pop()!.toLowerCase()}` : "";
   const base = ext ? trimmed.slice(0, -ext.length) : trimmed;
   const sanitizedBase = base
     .replace(/[^\x20-\x7e]/g, "_")
-    .replace(/["\\\/;=]/g, "_")
+    .replace(/["\\/;=]/g, "_")
     .replace(/\s+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
@@ -92,7 +94,9 @@ function guessUploadContentType(filename: string): string {
 }
 
 function requireAgentId(agent: ResolvedAgentAccount): number {
-  if (typeof agent.agentId === "number" && Number.isFinite(agent.agentId)) return agent.agentId;
+  if (typeof agent.agentId === "number" && Number.isFinite(agent.agentId)) {
+    return agent.agentId;
+  }
   throw new Error(
     `wecom agent account=${agent.accountId} missing agentId; sending via cgi-bin/message/send requires agentId`,
   );
@@ -144,11 +148,11 @@ export async function getAccessToken(agent: ResolvedAgentAccount): Promise<strin
         throw new Error(`gettoken failed: ${json?.errcode} ${json?.errmsg}`);
       }
 
-      cache!.token = json.access_token;
-      cache!.expiresAt = Date.now() + (json.expires_in ?? 7200) * 1000;
-      return cache!.token;
+      cache.token = json.access_token;
+      cache.expiresAt = Date.now() + (json.expires_in ?? 7200) * 1000;
+      return cache.token;
     } finally {
-      cache!.refreshPromise = null;
+      cache.refreshPromise = null;
     }
   })();
 
@@ -427,9 +431,9 @@ export async function downloadMedia(params: {
     // Compatible with: filename="a.md" / filename=a.md / filename*=UTF-8''a%2Eb.md
     const mStar = disposition.match(/filename\*\s*=\s*([^;]+)/i);
     if (mStar) {
-      const raw = mStar[1]!.trim().replace(/^"(.*)"$/, "$1");
+      const raw = mStar[1].trim().replace(/^"(.*)"$/, "$1");
       const parts = raw.split("''");
-      const encoded = parts.length === 2 ? parts[1]! : raw;
+      const encoded = parts.length === 2 ? parts[1] : raw;
       try {
         return decodeURIComponent(encoded);
       } catch {
@@ -437,8 +441,10 @@ export async function downloadMedia(params: {
       }
     }
     const m = disposition.match(/filename\s*=\s*([^;]+)/i);
-    if (!m) return undefined;
-    return m[1]!.trim().replace(/^"(.*)"$/, "$1") || undefined;
+    if (!m) {
+      return undefined;
+    }
+    return m[1].trim().replace(/^"(.*)"$/, "$1") || undefined;
   })();
 
   // Check if an error JSON was returned

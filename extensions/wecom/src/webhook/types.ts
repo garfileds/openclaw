@@ -7,7 +7,7 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import type { PluginRuntime } from "openclaw/plugin-sdk/core";
 import type { RuntimeEnv } from "openclaw/plugin-sdk/runtime-env";
-import type { WeComConfig, ResolvedWeComAccount } from "../utils.js";
+import type { _WeComConfig, ResolvedWeComAccount } from "../utils.js";
 
 // ============================================================================
 // Constants

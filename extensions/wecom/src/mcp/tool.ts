@@ -163,13 +163,17 @@ const handleCall = async (
  * 解析 args 参数：支持 JSON 字符串或直接的对象
  */
 const parseArgs = (args: string | Record<string, unknown> | undefined): Record<string, unknown> => {
-  if (!args) return {};
-  if (typeof args === "object") return args;
+  if (!args) {
+    return {};
+  }
+  if (typeof args === "object") {
+    return args;
+  }
   try {
     return JSON.parse(args) as Record<string, unknown>;
   } catch (err) {
     const detail = err instanceof SyntaxError ? err.message : String(err);
-    throw new Error(`args 参数不是合法的 JSON: ${args} (${detail})`);
+    throw new Error(`args 参数不是合法的 JSON: ${args} (${detail})`, { cause: err });
   }
 };
 

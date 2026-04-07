@@ -31,7 +31,9 @@ import type { WecomWebhookTarget, WebhookInboundMessage } from "./types.js";
 /** Parse URL query parameters */
 function parseQuery(url: string): Record<string, string> {
   const idx = url.indexOf("?");
-  if (idx < 0) return {};
+  if (idx < 0) {
+    return {};
+  }
   const params = new URLSearchParams(url.slice(idx + 1));
   const result: Record<string, string> = {};
   for (const [key, value] of params) {
@@ -104,10 +106,14 @@ function resolveBotIdentitySet(target: WecomWebhookTarget): Set<string> {
   const ids = new Set<string>();
   // account.botId — botId resolved from YAML config (single-account/multi-account)
   const botId = target.account.botId?.trim();
-  if (botId) ids.add(botId);
+  if (botId) {
+    ids.add(botId);
+  }
   // config.botId — same source as account.botId (fallback)
   const configBotId = target.account.config.botId?.trim();
-  if (configBotId) ids.add(configBotId);
+  if (configBotId) {
+    ids.add(configBotId);
+  }
   return ids;
 }
 
@@ -200,9 +206,13 @@ function normalizeRequestPath(url: string): string {
   const idx = url.indexOf("?");
   const pathname = idx >= 0 ? url.slice(0, idx) : url;
   const trimmed = pathname.trim();
-  if (!trimmed || trimmed === "/") return "/";
+  if (!trimmed || trimmed === "/") {
+    return "/";
+  }
   const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  if (withSlash.length > 1 && withSlash.endsWith("/")) return withSlash.slice(0, -1);
+  if (withSlash.length > 1 && withSlash.endsWith("/")) {
+    return withSlash.slice(0, -1);
+  }
   return withSlash;
 }
 
@@ -262,7 +272,9 @@ function findMatchingTarget(
         byAccountId.account.receiveId,
       );
       const ok = wc.verifySignature(signature, timestamp, nonce, encrypt);
-      if (ok) return { status: "matched", target: byAccountId };
+      if (ok) {
+        return { status: "matched", target: byAccountId };
+      }
     }
   }
 
@@ -271,7 +283,9 @@ function findMatchingTarget(
 
   // Filter semantics: collect all Targets with matching signatures
   const signatureMatches = candidates.filter((target) => {
-    if (!target?.account?.token) return false;
+    if (!target?.account?.token) {
+      return false;
+    }
     const wc = new WecomCrypto(
       target.account.token,
       target.account.encodingAESKey,
@@ -284,7 +298,7 @@ function findMatchingTarget(
   const uniqueMatches = deduplicateByAccountId(signatureMatches);
 
   if (uniqueMatches.length === 1) {
-    return { status: "matched", target: uniqueMatches[0]! };
+    return { status: "matched", target: uniqueMatches[0] };
   }
 
   const candidateAccountIds = (uniqueMatches.length > 0 ? uniqueMatches : candidates).map(
@@ -407,6 +421,7 @@ export async function handleWecomWebhookRequest(
     }
 
     // Support both encrypt / Encrypt casing (WeCom uses different field names in different scenarios)
+    // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
     const encrypt = String(body.encrypt ?? body.Encrypt ?? "");
 
     // POST body diagnostic logging (does not output encrypt content)

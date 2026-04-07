@@ -51,13 +51,19 @@ export const bizErrorInterceptor: CallInterceptor = {
  * Check if tools/call return result contains business error codes that require cache cleanup
  */
 function checkBizErrorAndClearCache(result: unknown, accountId: string, category: string): void {
-  if (!result || typeof result !== "object") return;
+  if (!result || typeof result !== "object") {
+    return;
+  }
 
   const { content } = result as { content?: Array<{ type: string; text?: string }> };
-  if (!Array.isArray(content)) return;
+  if (!Array.isArray(content)) {
+    return;
+  }
 
   for (const item of content) {
-    if (item.type !== "text" || !item.text) continue;
+    if (item.type !== "text" || !item.text) {
+      continue;
+    }
     try {
       const parsed = JSON.parse(item.text) as Record<string, unknown>;
       if (typeof parsed.errcode === "number" && BIZ_CACHE_CLEAR_ERROR_CODES.has(parsed.errcode)) {

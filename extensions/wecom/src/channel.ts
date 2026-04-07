@@ -121,7 +121,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
     idLabel: "wecomUserId",
     normalizeAllowEntry: (entry) =>
       entry.replace(new RegExp(`^(${CHANNEL_ID}|user):`, "i"), "").trim(),
-    notifyApproval: async ({ cfg, id }) => {
+    notifyApproval: async () => {
       // sendWeComMessage({
       //   to: id,
       //   content: " pairing approved",
@@ -303,7 +303,9 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
   messaging: {
     normalizeTarget: (target) => {
       const trimmed = target.trim();
-      if (!trimmed) return undefined;
+      if (!trimmed) {
+        return undefined;
+      }
       return trimmed;
     },
     targetResolver: {
@@ -584,7 +586,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
           config: ctx.cfg,
           runtime: ctx.runtime,
           abortSignal: ctx.abortSignal,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- SDK type signatures vary across versions
+          // oxlint-disable-next-line typescript/no-explicit-any
           setStatus: ctx.setStatus as any,
         });
       } else if (connectionMode === "webhook") {
@@ -603,6 +605,7 @@ export const wecomPlugin: ChannelPlugin<ResolvedWeComAccount> = {
           config: ctx.cfg,
           runtime: ctx.runtime,
           abortSignal: ctx.abortSignal,
+          // oxlint-disable-next-line typescript/no-explicit-any -- SDK type signatures vary across versions
           setStatus: ctx.setStatus as any,
           log: ctx.log,
           accountId: ctx.accountId,

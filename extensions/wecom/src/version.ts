@@ -11,9 +11,13 @@ const findPackageJson = (): string => {
   let dir = dirname(fileURLToPath(import.meta.url));
   while (true) {
     const candidate = resolve(dir, "package.json");
-    if (existsSync(candidate)) return candidate;
+    if (existsSync(candidate)) {
+      return candidate;
+    }
     const parent = dirname(dir);
-    if (parent === dir) break; // Reached filesystem root
+    if (parent === dir) {
+      break;
+    } // Reached filesystem root
     dir = parent;
   }
   throw new Error("Cannot find package.json");

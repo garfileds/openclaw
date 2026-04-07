@@ -28,9 +28,13 @@ const webhookTargets = new Map<string, WecomWebhookTarget[]>();
  */
 function normalizeWebhookPath(raw: string): string {
   const trimmed = raw.trim();
-  if (!trimmed) return "/";
+  if (!trimmed) {
+    return "/";
+  }
   const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  if (withSlash.length > 1 && withSlash.endsWith("/")) return withSlash.slice(0, -1);
+  if (withSlash.length > 1 && withSlash.endsWith("/")) {
+    return withSlash.slice(0, -1);
+  }
   return withSlash;
 }
 
@@ -58,8 +62,11 @@ function registerTargetForPath(path: string, target: WecomWebhookTarget): () => 
 
   return () => {
     const updated = (webhookTargets.get(key) ?? []).filter((entry) => entry !== normalizedTarget);
-    if (updated.length > 0) webhookTargets.set(key, updated);
-    else webhookTargets.delete(key);
+    if (updated.length > 0) {
+      webhookTargets.set(key, updated);
+    } else {
+      webhookTargets.delete(key);
+    }
   };
 }
 
@@ -140,7 +147,9 @@ export function parseWebhookPath(url: string): string | undefined {
     if (match?.[1]) {
       const segment = match[1];
       // 排除已知的非 accountId 路径段
-      if (segment === "bot") continue;
+      if (segment === "bot") {
+        continue;
+      }
       return segment;
     }
   }

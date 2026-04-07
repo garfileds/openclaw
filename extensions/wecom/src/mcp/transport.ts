@@ -191,7 +191,9 @@ async function getMcpUrl(accountId: string, category: string): Promise<string> {
 
   // Check memory cache
   const cached = mcpConfigCache.get(key);
-  if (cached) return cached.url as string;
+  if (cached) {
+    return cached.url as string;
+  }
 
   // Cache miss, fetch via WSClient
   const body = await fetchMcpConfig(accountId, category);
@@ -199,7 +201,7 @@ async function getMcpUrl(accountId: string, category: string): Promise<string> {
   // Write to cache
   mcpConfigCache.set(key, body);
 
-  console.log(`${LOG_TAG} getMcpUrl ${category}: ${body.url}`);
+  console.log(`${LOG_TAG} getMcpUrl ${category}: ${String(body.url)}`);
 
   return body.url as string;
 }
@@ -242,9 +244,11 @@ async function sendRawJsonRpc(
     });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error(`MCP 请求超时 (${timeoutMs}ms)`);
+      throw new Error(`MCP 请求超时 (${timeoutMs}ms)`, { cause: err });
     }
-    throw new Error(`MCP 网络请求失败: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error(`MCP 网络请求失败: ${err instanceof Error ? err.message : String(err)}`, {
+      cause: err,
+    });
   } finally {
     clearTimeout(timeoutId);
   }
@@ -366,16 +370,22 @@ async function getOrCreateSession(url: string, category: string, key: string): P
   // Confirmed stateless Server, return empty session directly to skip handshake
   if (statelessCategories.has(key)) {
     const cached = mcpSessionCache.get(key);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
     // First time found cleared (theoretically shouldn't reach here), re-run handshake detection
   }
 
   const cached = mcpSessionCache.get(key);
-  if (cached?.initialized) return cached;
+  if (cached?.initialized) {
+    return cached;
+  }
 
   // Prevent concurrent duplicate initialization
   const inflight = inflightInitRequests.get(key);
-  if (inflight) return inflight;
+  if (inflight) {
+    return inflight;
+  }
 
   const promise = initializeSession(url, category, key).finally(() => {
     inflightInitRequests.delete(key);
@@ -436,7 +446,7 @@ async function parseSseResponse(response: Response): Promise<unknown> {
     return rpc.result;
   } catch (err) {
     if (err instanceof SyntaxError) {
-      throw new Error(`SSE 响应解析失败: ${lastEventData.slice(0, 200)}`);
+      throw new Error(`SSE 响应解析失败: ${lastEventData.slice(0, 200)}`, { cause: err });
     }
     throw err;
   }
@@ -523,7 +533,9 @@ export async function sendJsonRpc(
       clearCategoryCache(accountId, category);
     }
 
-    if (session.stateless) throw err;
+    if (session.stateless) {
+      throw err;
+    }
 
     // Stateful Server: session invalidation returns 404; re-initialize and retry once
     if (err instanceof McpHttpError && err.statusCode === 404) {
@@ -553,7 +565,9 @@ export async function sendJsonRpc(
  */
 async function rebuildSession(url: string, category: string, key: string): Promise<McpSession> {
   const inflight = inflightInitRequests.get(key);
-  if (inflight) return inflight;
+  if (inflight) {
+    return inflight;
+  }
 
   const promise = initializeSession(url, category, key).finally(() => {
     inflightInitRequests.delete(key);

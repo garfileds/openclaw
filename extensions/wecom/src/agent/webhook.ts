@@ -61,9 +61,13 @@ export function deregisterAgentWebhookTarget(accountId: string): void {
 
 function normalizeWebhookPath(raw: string): string {
   const trimmed = raw.trim();
-  if (!trimmed) return "/";
+  if (!trimmed) {
+    return "/";
+  }
   const withSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
-  if (withSlash.length > 1 && withSlash.endsWith("/")) return withSlash.slice(0, -1);
+  if (withSlash.length > 1 && withSlash.endsWith("/")) {
+    return withSlash.slice(0, -1);
+  }
   return withSlash;
 }
 
@@ -107,9 +111,14 @@ async function readTextBody(
 }
 
 function normalizeAgentIdValue(value: unknown): number | undefined {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
   const raw = String(value ?? "").trim();
-  if (!raw) return undefined;
+  if (!raw) {
+    return undefined;
+  }
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : undefined;
 }
@@ -175,7 +184,7 @@ export async function handleWecomAgentWebhookRequest(
       );
       return true;
     }
-    const selected = matched[0]!;
+    const selected = matched[0];
     try {
       const wc = new WecomCrypto(
         selected.agent.token,
@@ -196,7 +205,9 @@ export async function handleWecomAgentWebhookRequest(
   }
 
   // ── POST: XML message callback ─────────────────────────────────────────────
-  if (req.method !== "POST") return false;
+  if (req.method !== "POST") {
+    return false;
+  }
 
   const rawBody = await readTextBody(req, LIMITS.MAX_REQUEST_BODY_SIZE);
   if (!rawBody.ok) {
@@ -234,7 +245,7 @@ export async function handleWecomAgentWebhookRequest(
     return true;
   }
 
-  const selected = matched[0]!;
+  const selected = matched[0];
   let decrypted = "";
   let parsed: ReturnType<typeof parseXml> | null = null;
   try {

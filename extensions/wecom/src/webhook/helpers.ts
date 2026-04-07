@@ -72,7 +72,9 @@ export const MIME_BY_EXT: Record<string, string> = {
  */
 export function truncateUtf8Bytes(text: string, maxBytes: number): string {
   const buf = Buffer.from(text, "utf8");
-  if (buf.length <= maxBytes) return text;
+  if (buf.length <= maxBytes) {
+    return text;
+  }
   const slice = buf.subarray(buf.length - maxBytes);
   return slice.toString("utf8");
 }
@@ -127,7 +129,9 @@ export function buildFallbackPrompt(params: {
  * Extract local file paths from text (aligned with original extractLocalFilePathsFromText)
  */
 export function extractLocalFilePathsFromText(text: string): string[] {
-  if (!text.trim()) return [];
+  if (!text.trim()) {
+    return [];
+  }
   const re = new RegExp(
     String.raw`(\/(?:Users|tmp|root|home)\/[^\s"'<>\u3000-\u303F\uFF00-\uFFEF\u4E00-\u9FFF\u3400-\u4DBF]+)`,
     "g",
@@ -136,7 +140,9 @@ export function extractLocalFilePathsFromText(text: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const p = m[1];
-    if (p) found.add(p);
+    if (p) {
+      found.add(p);
+    }
   }
   return Array.from(found);
 }
@@ -151,15 +157,21 @@ export function extractLocalImagePathsFromText(params: {
   mustAlsoAppearIn: string;
 }): string[] {
   const { text, mustAlsoAppearIn } = params;
-  if (!text.trim()) return [];
+  if (!text.trim()) {
+    return [];
+  }
   const exts = "(png|jpg|jpeg|gif|webp|bmp)";
   const re = new RegExp(String.raw`(\/(?:Users|tmp|root|home)\/[^\s"'<>]+?\.${exts})`, "gi");
   const found = new Set<string>();
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
     const p = m[1];
-    if (!p) continue;
-    if (!mustAlsoAppearIn.includes(p)) continue;
+    if (!p) {
+      continue;
+    }
+    if (!mustAlsoAppearIn.includes(p)) {
+      continue;
+    }
     found.add(p);
   }
   return Array.from(found);
@@ -170,7 +182,9 @@ export function extractLocalImagePathsFromText(params: {
  */
 export function looksLikeSendLocalFileIntent(rawBody: string): boolean {
   const t = rawBody.trim();
-  if (!t) return false;
+  if (!t) {
+    return false;
+  }
   return /(发送|发给|发到|转发|把.*发|把.*发送|帮我发|给我发)/.test(t);
 }
 
@@ -186,7 +200,9 @@ export function computeTaskKey(
   msg: WebhookInboundMessage,
 ): string | undefined {
   const msgid = msg.msgid ? String(msg.msgid) : "";
-  if (!msgid) return undefined;
+  if (!msgid) {
+    return undefined;
+  }
   const aibotid = String(msg.aibotid ?? "unknown").trim() || "unknown";
   return `bot:${target.account.accountId}:${aibotid}:${msgid}`;
 }
@@ -205,7 +221,9 @@ export function isAgentConfigured(target: WecomWebhookTarget): boolean {
  */
 export function guessContentTypeFromPath(filePath: string): string | undefined {
   const ext = filePath.split(".").pop()?.toLowerCase();
-  if (!ext) return undefined;
+  if (!ext) {
+    return undefined;
+  }
   return MIME_BY_EXT[ext];
 }
 
@@ -257,8 +275,10 @@ export function computeMd5(data: Buffer | string): string {
  * Resolve media max bytes (aligned with original resolveWecomMediaMaxBytes)
  */
 export function resolveWecomMediaMaxBytes(cfg: OpenClawConfig): number {
-  const val = (cfg.channels?.wecom as any)?.media?.maxBytes;
-  if (typeof val === "number" && Number.isFinite(val) && val > 0) return val;
+  const val = (cfg.channels?.wecom as unknown)?.media?.maxBytes;
+  if (typeof val === "number" && Number.isFinite(val) && val > 0) {
+    return val;
+  }
   return 20 * 1024 * 1024; // Default 20MB
 }
 
@@ -302,8 +322,8 @@ export async function processInboundMessage(
 
   // Image message processing
   if (msgtype === "image") {
-    const url = String((msg as any).image?.url ?? "").trim();
-    const aesKey = globalAesKey || (msg as any).image?.aeskey || "";
+    const url = String((msg as unknown).image?.url ?? "").trim();
+    const aesKey = globalAesKey || (msg as unknown).image?.aeskey || "";
     if (url && aesKey) {
       try {
         const decrypted = await decryptWecomMediaWithMeta(url, aesKey, {
@@ -339,8 +359,8 @@ export async function processInboundMessage(
 
   // File message processing
   if (msgtype === "file") {
-    const url = String((msg as any).file?.url ?? "").trim();
-    const aesKey = globalAesKey || (msg as any).file?.aeskey || "";
+    const url = String((msg as unknown).file?.url ?? "").trim();
+    const aesKey = globalAesKey || (msg as unknown).file?.aeskey || "";
     if (url && aesKey) {
       try {
         const decrypted = await decryptWecomMediaWithMeta(url, aesKey, {
@@ -375,8 +395,8 @@ export async function processInboundMessage(
 
   // Video message processing
   if (msgtype === "video") {
-    const url = String((msg as any).video?.url ?? "").trim();
-    const aesKey = globalAesKey || (msg as any).video?.aeskey || "";
+    const url = String((msg as unknown).video?.url ?? "").trim();
+    const aesKey = globalAesKey || (msg as unknown).video?.aeskey || "";
     if (url && aesKey) {
       try {
         const decrypted = await decryptWecomMediaWithMeta(url, aesKey, {
@@ -411,7 +431,7 @@ export async function processInboundMessage(
 
   // Mixed message processing: extract text + first media
   if (msgtype === "mixed") {
-    const items = (msg as any).mixed?.msg_item;
+    const items = (msg as unknown).mixed?.msg_item;
     if (Array.isArray(items)) {
       let foundMedia: InboundResult["media"] | undefined = undefined;
       const bodyParts: string[] = [];
@@ -420,7 +440,9 @@ export async function processInboundMessage(
         const t = String(item.msgtype ?? "").toLowerCase();
         if (t === "text") {
           const content = String(item.text?.content ?? "").trim();
-          if (content) bodyParts.push(content);
+          if (content) {
+            bodyParts.push(content);
+          }
         } else if ((t === "image" || t === "file") && !foundMedia) {
           const itemAesKey = globalAesKey || item[t]?.aeskey || "";
           const url = String(item[t]?.url ?? "").trim();
@@ -478,8 +500,9 @@ export async function processInboundMessage(
 /** Format decryption error message (aligned with original format: message + cause) */
 function formatDecryptError(err: unknown): string {
   if (typeof err === "object" && err) {
-    const msg = (err as any).message ?? String(err);
-    const cause = (err as any).cause;
+    // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
+    const msg = (err as unknown).message ?? String(err);
+    const cause = (err as unknown).cause;
     return cause ? `${msg} (cause: ${String(cause)})` : String(msg);
   }
   return String(err);
@@ -488,29 +511,32 @@ function formatDecryptError(err: unknown): string {
 /** Extract explicit filename from message (aligned with original pickBotFileName) */
 function pickBotFileName(
   msg: WebhookInboundMessage,
-  item?: Record<string, any>,
+  item?: Record<string, unknown>,
 ): string | undefined {
   const fromItem = item
     ? resolveInlineFileName(
         item?.filename ?? item?.file_name ?? item?.fileName ?? item?.name ?? item?.title,
       )
     : undefined;
-  if (fromItem) return fromItem;
+  if (fromItem) {
+    return fromItem;
+  }
 
   const fromFile = resolveInlineFileName(
-    (msg as any)?.file?.filename ??
-      (msg as any)?.file?.file_name ??
-      (msg as any)?.file?.fileName ??
-      (msg as any)?.file?.name ??
-      (msg as any)?.file?.title ??
-      (msg as any)?.filename ??
-      (msg as any)?.fileName ??
-      (msg as any)?.FileName,
+    (msg as unknown)?.file?.filename ??
+      (msg as unknown)?.file?.file_name ??
+      (msg as unknown)?.file?.fileName ??
+      (msg as unknown)?.file?.name ??
+      (msg as unknown)?.file?.title ??
+      (msg as unknown)?.filename ??
+      (msg as unknown)?.fileName ??
+      (msg as unknown)?.FileName,
   );
   return fromFile;
 }
 
 function resolveInlineFileName(input: unknown): string | undefined {
+  // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
   const raw = String(input ?? "").trim();
   return sanitizeInboundFilename(raw);
 }
@@ -518,9 +544,14 @@ function resolveInlineFileName(input: unknown): string | undefined {
 /** Sanitize filename (remove illegal characters) */
 function sanitizeInboundFilename(raw?: string): string | undefined {
   const s = String(raw ?? "").trim();
-  if (!s) return undefined;
+  if (!s) {
+    return undefined;
+  }
   const base = s.split(/[\\/]/).pop()?.trim() ?? "";
-  if (!base) return undefined;
+  if (!base) {
+    return undefined;
+  }
+  // eslint-disable-next-line no-control-regex -- intentional control character matching
   const sanitized = base.replace(/[\u0000-\u001f<>:"|?*]/g, "_").trim();
   return sanitized || undefined;
 }
@@ -528,7 +559,9 @@ function sanitizeInboundFilename(raw?: string): string | undefined {
 /** Extract filename from URL */
 function extractFileNameFromUrl(rawUrl?: string): string | undefined {
   const s = String(rawUrl ?? "").trim();
-  if (!s) return undefined;
+  if (!s) {
+    return undefined;
+  }
   try {
     const u = new URL(s);
     const name = decodeURIComponent(u.pathname.split("/").pop() ?? "").trim();
@@ -540,7 +573,9 @@ function extractFileNameFromUrl(rawUrl?: string): string | undefined {
 
 /** Check if filename has a common extension */
 function hasLikelyExtension(name?: string): boolean {
-  if (!name) return false;
+  if (!name) {
+    return false;
+  }
   return /\.[a-z0-9]{1,16}$/i.test(name);
 }
 
@@ -562,7 +597,9 @@ const GENERIC_CONTENT_TYPES = new Set([
 
 function isGenericContentType(raw?: string | null): boolean {
   const normalized = normalizeContentType(raw);
-  if (!normalized) return true;
+  if (!normalized) {
+    return true;
+  }
   return GENERIC_CONTENT_TYPES.has(normalized);
 }
 
@@ -574,8 +611,12 @@ const EXT_BY_MIME: Record<string, string> = {
 /** Guess extension from Content-Type */
 function guessExtensionFromContentType(contentType?: string): string | undefined {
   const normalized = normalizeContentType(contentType);
-  if (!normalized) return undefined;
-  if (normalized === "image/jpeg") return "jpg";
+  if (!normalized) {
+    return undefined;
+  }
+  if (normalized === "image/jpeg") {
+    return "jpg";
+  }
   return EXT_BY_MIME[normalized];
 }
 
@@ -586,7 +627,9 @@ function guessExtensionFromContentType(contentType?: string): string | undefined
  * Different from the async detectMimeFromBuffer in media.ts which uses the file-type library.
  */
 function detectMimeFromBufferSync(buffer: Buffer): string | undefined {
-  if (!buffer || buffer.length < 4) return undefined;
+  if (!buffer || buffer.length < 4) {
+    return undefined;
+  }
 
   // PNG
   if (
@@ -599,53 +642,68 @@ function detectMimeFromBufferSync(buffer: Buffer): string | undefined {
     buffer[5] === 0x0a &&
     buffer[6] === 0x1a &&
     buffer[7] === 0x0a
-  )
+  ) {
     return "image/png";
+  }
 
   // JPEG
-  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "image/jpeg";
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
 
   // GIF
   if (
     buffer.subarray(0, 6).toString("ascii") === "GIF87a" ||
     buffer.subarray(0, 6).toString("ascii") === "GIF89a"
-  )
+  ) {
     return "image/gif";
+  }
 
   // WEBP
   if (
     buffer.length >= 12 &&
     buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
     buffer.subarray(8, 12).toString("ascii") === "WEBP"
-  )
+  ) {
     return "image/webp";
+  }
 
   // BMP
-  if (buffer[0] === 0x42 && buffer[1] === 0x4d) return "image/bmp";
+  if (buffer[0] === 0x42 && buffer[1] === 0x4d) {
+    return "image/bmp";
+  }
 
   // PDF
-  if (buffer.subarray(0, 5).toString("ascii") === "%PDF-") return "application/pdf";
+  if (buffer.subarray(0, 5).toString("ascii") === "%PDF-") {
+    return "application/pdf";
+  }
 
   // OGG
-  if (buffer.subarray(0, 4).toString("ascii") === "OggS") return "audio/ogg";
+  if (buffer.subarray(0, 4).toString("ascii") === "OggS") {
+    return "audio/ogg";
+  }
 
   // WAV
   if (
     buffer.length >= 12 &&
     buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
     buffer.subarray(8, 12).toString("ascii") === "WAVE"
-  )
+  ) {
     return "audio/wav";
+  }
 
   // MP3
   if (
     buffer.subarray(0, 3).toString("ascii") === "ID3" ||
     (buffer[0] === 0xff && ((buffer[1] ?? 0) & 0xe0) === 0xe0)
-  )
+  ) {
     return "audio/mpeg";
+  }
 
   // MP4/MOV family
-  if (buffer.length >= 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") return "video/mp4";
+  if (buffer.length >= 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") {
+    return "video/mp4";
+  }
 
   // Legacy Office (OLE Compound File)
   if (
@@ -658,8 +716,9 @@ function detectMimeFromBufferSync(buffer: Buffer): string | undefined {
     buffer[5] === 0xb1 &&
     buffer[6] === 0x1a &&
     buffer[7] === 0xe1
-  )
+  ) {
     return "application/msword";
+  }
 
   // ZIP / OOXML
   const zipMagic =
@@ -668,12 +727,15 @@ function detectMimeFromBufferSync(buffer: Buffer): string | undefined {
     (buffer[0] === 0x50 && buffer[1] === 0x4b && buffer[2] === 0x07 && buffer[3] === 0x08);
   if (zipMagic) {
     const probe = buffer.subarray(0, Math.min(buffer.length, 512 * 1024));
-    if (probe.includes(Buffer.from("word/")))
+    if (probe.includes(Buffer.from("word/"))) {
       return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-    if (probe.includes(Buffer.from("xl/")))
+    }
+    if (probe.includes(Buffer.from("xl/"))) {
       return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    if (probe.includes(Buffer.from("ppt/")))
+    }
+    if (probe.includes(Buffer.from("ppt/"))) {
       return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    }
     return "application/zip";
   }
 
@@ -681,12 +743,16 @@ function detectMimeFromBufferSync(buffer: Buffer): string | undefined {
   const sample = buffer.subarray(0, Math.min(buffer.length, 4096));
   let printable = 0;
   for (const b of sample) {
-    if (b === 0x00) return undefined;
+    if (b === 0x00) {
+      return undefined;
+    }
     if (b === 0x09 || b === 0x0a || b === 0x0d || (b >= 0x20 && b <= 0x7e)) {
       printable += 1;
     }
   }
-  if (sample.length > 0 && printable / sample.length > 0.95) return "text/plain";
+  if (sample.length > 0 && printable / sample.length > 0.95) {
+    return "text/plain";
+  }
 
   return undefined;
 }
@@ -715,10 +781,15 @@ function inferInboundMediaMeta(params: {
 
   let contentType: string;
   if (params.kind === "image") {
-    if (magicType?.startsWith("image/")) contentType = magicType;
-    else if (headerType?.startsWith("image/")) contentType = headerType;
-    else if (typeByName?.startsWith("image/")) contentType = typeByName;
-    else contentType = "image/jpeg";
+    if (magicType?.startsWith("image/")) {
+      contentType = magicType;
+    } else if (headerType?.startsWith("image/")) {
+      contentType = headerType;
+    } else if (typeByName?.startsWith("image/")) {
+      contentType = typeByName;
+    } else {
+      contentType = "image/jpeg";
+    }
   } else {
     contentType =
       magicType ||
@@ -751,23 +822,23 @@ function inferInboundMediaMeta(params: {
  * - blockStreamingChunk / blockStreamingCoalesce use smaller thresholds
  */
 export function buildCfgForDispatch(config: OpenClawConfig): OpenClawConfig {
-  const baseAgents = (config as any)?.agents ?? {};
-  const baseAgentDefaults = (baseAgents as any)?.defaults ?? {};
-  const baseBlockChunk = (baseAgentDefaults as any)?.blockStreamingChunk ?? {};
-  const baseBlockCoalesce = (baseAgentDefaults as any)?.blockStreamingCoalesce ?? {};
-  const baseTools = (config as any)?.tools ?? {};
-  const baseSandbox = (baseTools as any)?.sandbox ?? {};
-  const baseSandboxTools = (baseSandbox as any)?.tools ?? {};
-  const existingTopLevelDeny = Array.isArray((baseTools as any).deny)
-    ? ((baseTools as any).deny as string[])
+  const baseAgents = (config as unknown)?.agents ?? {};
+  const baseAgentDefaults = (baseAgents as unknown)?.defaults ?? {};
+  const baseBlockChunk = (baseAgentDefaults as unknown)?.blockStreamingChunk ?? {};
+  const baseBlockCoalesce = (baseAgentDefaults as unknown)?.blockStreamingCoalesce ?? {};
+  const baseTools = (config as unknown)?.tools ?? {};
+  const baseSandbox = (baseTools as unknown)?.sandbox ?? {};
+  const baseSandboxTools = (baseSandbox as unknown)?.tools ?? {};
+  const existingTopLevelDeny = Array.isArray((baseTools as unknown).deny)
+    ? ((baseTools as unknown).deny as string[])
     : [];
-  const existingSandboxDeny = Array.isArray((baseSandboxTools as any).deny)
-    ? ((baseSandboxTools as any).deny as string[])
+  const existingSandboxDeny = Array.isArray((baseSandboxTools as unknown).deny)
+    ? ((baseSandboxTools as unknown).deny as string[])
     : [];
   const topLevelDeny = Array.from(new Set([...existingTopLevelDeny, "message"]));
   const sandboxDeny = Array.from(new Set([...existingSandboxDeny, "message"]));
   return {
-    ...(config as any),
+    ...(config as unknown),
     agents: {
       ...baseAgents,
       defaults: {
@@ -807,8 +878,11 @@ export function buildCfgForDispatch(config: OpenClawConfig): OpenClawConfig {
  */
 export function resolveWecomSenderUserId(msg: WebhookInboundMessage): string | undefined {
   const direct = msg.from?.userid?.trim();
-  if (direct) return direct;
+  if (direct) {
+    return direct;
+  }
   const rawMsg = msg as unknown as Record<string, unknown>;
+  // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
   const legacy = String(rawMsg.fromuserid ?? rawMsg.from_userid ?? rawMsg.fromUserId ?? "").trim();
   return legacy || undefined;
 }
@@ -846,8 +920,12 @@ export function buildInboundBody(msg: WebhookInboundMessage): string {
       body = items
         .map((item) => {
           const t = String(item?.msgtype ?? "").toLowerCase();
-          if (t === "text") return item?.text?.content || "";
-          if (t === "image") return `[image] ${item?.image?.url || ""}`;
+          if (t === "text") {
+            return item?.text?.content || "";
+          }
+          if (t === "image") {
+            return `[image] ${item?.image?.url || ""}`;
+          }
           return `[${t || "item"}]`;
         })
         .filter(Boolean)
@@ -873,7 +951,9 @@ export function buildInboundBody(msg: WebhookInboundMessage): string {
   const quote = msg.quote;
   if (quote) {
     const quoteText = formatQuote(quote).trim();
-    if (quoteText) body += `\n\n> ${quoteText}`;
+    if (quoteText) {
+      body += `\n\n> ${quoteText}`;
+    }
   }
 
   return body;
@@ -884,22 +964,36 @@ export function buildInboundBody(msg: WebhookInboundMessage): string {
  */
 export function formatQuote(quote: WebhookInboundQuote): string {
   const type = quote.msgtype ?? "";
-  if (type === "text") return quote.text?.content || "";
-  if (type === "image") return `[引用: 图片] ${quote.image?.url || ""}`;
+  if (type === "text") {
+    return quote.text?.content || "";
+  }
+  if (type === "image") {
+    return `[引用: 图片] ${quote.image?.url || ""}`;
+  }
   if (type === "mixed" && quote.mixed?.msg_item) {
     const items = quote.mixed.msg_item
       .map((item) => {
-        if (item.msgtype === "text") return item.text?.content;
-        if (item.msgtype === "image") return `[图片] ${item.image?.url || ""}`;
+        if (item.msgtype === "text") {
+          return item.text?.content;
+        }
+        if (item.msgtype === "image") {
+          return `[图片] ${item.image?.url || ""}`;
+        }
         return "";
       })
       .filter(Boolean)
       .join(" ");
     return `[引用: 图文] ${items}`;
   }
-  if (type === "voice") return `[引用: 语音] ${quote.voice?.content || ""}`;
-  if (type === "file") return `[引用: 文件] ${quote.file?.url || ""}`;
-  if (type === "video") return `[引用: 视频] ${quote.video?.url || ""}`;
+  if (type === "voice") {
+    return `[引用: 语音] ${quote.voice?.content || ""}`;
+  }
+  if (type === "file") {
+    return `[引用: 文件] ${quote.file?.url || ""}`;
+  }
+  if (type === "video") {
+    return `[引用: 视频] ${quote.video?.url || ""}`;
+  }
   return "";
 }
 

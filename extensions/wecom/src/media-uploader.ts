@@ -12,7 +12,7 @@ import {
   IMAGE_MAX_BYTES,
   VIDEO_MAX_BYTES,
   VOICE_MAX_BYTES,
-  FILE_MAX_BYTES,
+  _FILE_MAX_BYTES,
   ABSOLUTE_MAX_BYTES,
 } from "./const.js";
 import { loadOutboundMediaFromUrl, detectMime, type WebMediaResult } from "./openclaw-compat.js";
@@ -311,9 +311,9 @@ export interface UploadAndSendMediaOptions {
   /** Allowed local directory whitelist for reading local files */
   mediaLocalRoots?: readonly string[];
   /** Logging function */
-  log?: (...args: any[]) => void;
+  log?: (...args: unknown[]) => void;
   /** Error logging function */
-  errorLog?: (...args: any[]) => void;
+  errorLog?: (...args: unknown[]) => void;
 }
 
 /** Return result of uploadAndSendMedia */
@@ -416,9 +416,9 @@ export interface UploadAndReplyMediaOptions {
   /** Allowed local directory whitelist for reading local files */
   mediaLocalRoots?: readonly string[];
   /** Logging function */
-  log?: (...args: any[]) => void;
+  log?: (...args: unknown[]) => void;
   /** Error logging function */
-  errorLog?: (...args: any[]) => void;
+  errorLog?: (...args: unknown[]) => void;
 }
 
 /**

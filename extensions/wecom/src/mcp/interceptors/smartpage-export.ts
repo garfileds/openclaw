@@ -49,12 +49,16 @@ export const smartpageExportInterceptor: CallInterceptor = {
 async function interceptExportResponse(result: unknown): Promise<unknown> {
   // 1. Extract the content array from the MCP result
   const content = (result as Record<string, unknown>)?.content;
-  if (!Array.isArray(content)) return result;
+  if (!Array.isArray(content)) {
+    return result;
+  }
 
   const textItem = content.find(
     (c: Record<string, unknown>) => c.type === "text" && typeof c.text === "string",
   ) as { type: string; text: string } | undefined;
-  if (!textItem) return result;
+  if (!textItem) {
+    return result;
+  }
 
   // 2. Parse the business JSON
   let bizData: Record<string, unknown>;
@@ -66,11 +70,17 @@ async function interceptExportResponse(result: unknown): Promise<unknown> {
   }
 
   // 3. Validate: return as-is if errcode !== 0, task_done is not true, or content is missing
-  if (bizData.errcode !== 0) return result;
-  if (bizData.task_done !== true) return result;
-  if (typeof bizData.content !== "string") return result;
+  if (bizData.errcode !== 0) {
+    return result;
+  }
+  if (bizData.task_done !== true) {
+    return result;
+  }
+  if (typeof bizData.content !== "string") {
+    return result;
+  }
 
-  const markdownContent = bizData.content as string;
+  const markdownContent = bizData.content;
 
   console.log(
     `[mcp] smartpage_get_export_result: 拦截 content (${markdownContent.length} chars)，保存到本地文件`,

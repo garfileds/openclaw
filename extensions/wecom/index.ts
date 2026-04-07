@@ -18,7 +18,7 @@ export default defineChannelPluginEntry({
   setRuntime: setWeComRuntime,
   registerFull(api: OpenClawPluginApi) {
     // Register wecom_mcp tool: invoke WeCom MCP Server via HTTP
-    api.registerTool(createWeComMcpTool() as any, { name: "wecom_mcp" });
+    api.registerTool(createWeComMcpTool() as unknown, { name: "wecom_mcp" });
 
     const agentWebhookHandler = createWecomAgentWebhookHandler(api.runtime);
 

@@ -55,12 +55,14 @@ async function validateFileSize(pages: Record<string, unknown>[]): Promise<void>
 
   for (let i = 0; i < pages.length; i++) {
     const filePath = pages[i].page_filepath;
-    if (typeof filePath !== "string" || !filePath) continue;
+    if (typeof filePath !== "string" || !filePath) {
+      continue;
+    }
 
     let stat: Awaited<ReturnType<typeof fs.stat>>;
     try {
       stat = await fs.stat(filePath);
-    } catch (err) {
+    } catch {
       // stat failure not handled here; left for the subsequent readFile phase to throw a more detailed error
       continue;
     }
@@ -115,6 +117,7 @@ async function resolvePages(
       } catch (err) {
         throw new Error(
           `smartpage_create: pages[${index}] 无法读取文件 "${filePath}": ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err },
         );
       }
 

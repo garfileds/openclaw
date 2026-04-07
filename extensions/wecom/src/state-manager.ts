@@ -70,7 +70,9 @@ let cleanupRefCount = 0;
 export function startMessageStateCleanup(): void {
   cleanupRefCount++;
 
-  if (cleanupTimer) return;
+  if (cleanupTimer) {
+    return;
+  }
 
   cleanupTimer = setInterval(() => {
     pruneMessageStates();
@@ -89,7 +91,9 @@ export function startMessageStateCleanup(): void {
  * reaches zero (i.e., no active accounts remain).
  */
 export function stopMessageStateCleanup(): void {
-  if (cleanupRefCount > 0) cleanupRefCount--;
+  if (cleanupRefCount > 0) {
+    cleanupRefCount--;
+  }
 
   if (cleanupRefCount === 0 && cleanupTimer) {
     clearInterval(cleanupTimer);
@@ -112,7 +116,7 @@ function pruneMessageStates(): void {
 
   // 2. Capacity limit: if still exceeding max entries, evict the oldest by time
   if (messageStates.size > MESSAGE_STATE_MAX_SIZE) {
-    const sorted = [...messageStates.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
+    const sorted = [...messageStates.entries()].toSorted((a, b) => a[1].createdAt - b[1].createdAt);
     const toRemove = sorted.slice(0, messageStates.size - MESSAGE_STATE_MAX_SIZE);
     for (const [key] of toRemove) {
       messageStates.delete(key);
@@ -135,7 +139,9 @@ export function setMessageState(messageId: string, state: MessageState): void {
  */
 export function getMessageState(messageId: string): MessageState | undefined {
   const entry = messageStates.get(messageId);
-  if (!entry) return undefined;
+  if (!entry) {
+    return undefined;
+  }
 
   // Check TTL
   if (Date.now() - entry.createdAt >= MESSAGE_STATE_TTL_MS) {
@@ -233,7 +239,7 @@ export async function warmupReqIdStore(
  *
  * Note: Since disk storage has been removed, this function is a no-op
  */
-export async function flushReqIdStore(accountId = "default"): Promise<void> {
+export async function flushReqIdStore(_accountId = "default"): Promise<void> {
   // Since disk storage has been removed, no flush operation is needed
 }
 
@@ -269,7 +275,7 @@ export async function cleanupAll(): Promise<void> {
   stopMessageStateCleanup();
 
   // Clean up all WSClient instances
-  for (const [accountId, wsClient] of wsClientInstances) {
+  for (const [_accountId, wsClient] of wsClientInstances) {
     try {
       wsClient.disconnect();
     } catch {

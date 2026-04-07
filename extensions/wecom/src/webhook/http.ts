@@ -9,7 +9,9 @@ const proxyDispatchers = new Map<string, ProxyAgent>();
  */
 function getProxyDispatcher(proxyUrl: string): ProxyAgent {
   const existing = proxyDispatchers.get(proxyUrl);
-  if (existing) return existing;
+  if (existing) {
+    return existing;
+  }
   const created = new ProxyAgent(proxyUrl);
   proxyDispatchers.set(proxyUrl, created);
   return created;
@@ -20,12 +22,18 @@ function mergeAbortSignal(params: {
   timeoutMs?: number;
 }): AbortSignal | undefined {
   const signals: AbortSignal[] = [];
-  if (params.signal) signals.push(params.signal);
+  if (params.signal) {
+    signals.push(params.signal);
+  }
   if (params.timeoutMs && Number.isFinite(params.timeoutMs) && params.timeoutMs > 0) {
     signals.push(AbortSignal.timeout(params.timeoutMs));
   }
-  if (!signals.length) return undefined;
-  if (signals.length === 1) return signals[0];
+  if (!signals.length) {
+    return undefined;
+  }
+  if (signals.length === 1) {
+    return signals[0];
+  }
   return AbortSignal.any(signals);
 }
 
@@ -69,7 +77,7 @@ export async function wecomFetch(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nextInit: any = {
-    ...(init ?? {}),
+    ...init,
     ...(signal ? { signal } : {}),
     ...(dispatcher ? { dispatcher } : {}),
     headers,
@@ -82,7 +90,7 @@ export async function wecomFetch(
     )) as unknown as Response;
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "TypeError" && err.message === "fetch failed") {
-      const cause = (err as any).cause;
+      const cause = (err as unknown).cause;
       console.error(
         `[wecom-http] fetch failed: ${input} (proxy: ${proxyUrl || "none"})${cause ? ` - cause: ${String(cause)}` : ""}`,
       );
@@ -98,7 +106,9 @@ export async function wecomFetch(
  * Suitable for media file downloads and similar scenarios.
  */
 export async function readResponseBodyAsBuffer(res: Response, maxBytes?: number): Promise<Buffer> {
-  if (!res.body) return Buffer.alloc(0);
+  if (!res.body) {
+    return Buffer.alloc(0);
+  }
 
   const limit = maxBytes && Number.isFinite(maxBytes) && maxBytes > 0 ? maxBytes : undefined;
   const chunks: Uint8Array[] = [];
@@ -107,8 +117,12 @@ export async function readResponseBodyAsBuffer(res: Response, maxBytes?: number)
   const reader = res.body.getReader();
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
+    if (done) {
+      break;
+    }
+    if (!value) {
+      continue;
+    }
 
     total += value.byteLength;
     if (limit && total > limit) {

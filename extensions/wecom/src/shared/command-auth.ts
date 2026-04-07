@@ -16,11 +16,17 @@ function normalizeWecomAllowFromEntry(raw: string): string {
 }
 
 function isWecomSenderAllowed(senderUserId: string, allowFrom: string[]): boolean {
-  const list = allowFrom.map((entry) => normalizeWecomAllowFromEntry(entry)).filter(Boolean);
-  if (list.includes("*")) return true;
+  const list = new Set(
+    allowFrom.map((entry) => normalizeWecomAllowFromEntry(entry)).filter(Boolean),
+  );
+  if (list.has("*")) {
+    return true;
+  }
   const normalizedSender = normalizeWecomAllowFromEntry(senderUserId);
-  if (!normalizedSender) return false;
-  return list.includes(normalizedSender);
+  if (!normalizedSender) {
+    return false;
+  }
+  return list.has(normalizedSender);
 }
 
 export async function resolveWecomCommandAuthorization(params: {
@@ -39,11 +45,7 @@ export async function resolveWecomCommandAuthorization(params: {
 }> {
   const { core, cfg, accountConfig, rawBody, senderUserId } = params;
 
-  const dmPolicy = (accountConfig.dmPolicy ?? "pairing") as
-    | "pairing"
-    | "allowlist"
-    | "open"
-    | "disabled";
+  const dmPolicy = accountConfig.dmPolicy ?? "pairing";
   const configAllowFrom = (accountConfig.allowFrom ?? []).map((v) => String(v));
 
   const shouldComputeAuth = core.channel.commands.shouldComputeCommandAuthorized(rawBody, cfg);

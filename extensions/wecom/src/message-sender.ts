@@ -107,7 +107,7 @@ export async function sendWeComReply(params: {
       REPLY_SEND_TIMEOUT_MS,
       `Reply send timed out (streamId=${streamId})`,
     );
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Server returned 846608: stream message inactive for >6 minutes, need to fall back to proactive send
     const errMsg = err?.errmsg || err?.message || String(err);
     if (
@@ -144,8 +144,9 @@ export async function sendWeComReplyNonBlocking(params: {
   runtime: RuntimeEnv;
   streamId: string;
   finish?: boolean;
+  // oxlint-disable-next-line typescript/no-redundant-type-constituents -- intentional explicit union member
 }): Promise<string | "skipped"> {
-  const { wsClient, frame, text, runtime, streamId, finish = false } = params;
+  const { wsClient, frame, text, _runtime, streamId, finish = false } = params;
 
   if (!text) {
     return "skipped";
@@ -161,7 +162,7 @@ export async function sendWeComReplyNonBlocking(params: {
       return "skipped";
     }
     return streamId;
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Server returned 846608: stream message inactive for >6 minutes, need to fall back to proactive send
     const errMsg = err?.errmsg || err?.message || String(err);
     if (

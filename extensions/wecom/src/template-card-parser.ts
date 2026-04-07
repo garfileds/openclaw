@@ -38,13 +38,21 @@ function coerceToInt(value: unknown): number | undefined {
 
 /** Coerces potentially string/invalid values output by the LLM into booleans */
 function coerceToBool(value: unknown): boolean | undefined {
-  if (typeof value === "boolean") return value;
+  if (typeof value === "boolean") {
+    return value;
+  }
   if (typeof value === "string") {
     const t = value.trim().toLowerCase();
-    if (t === "true" || t === "1" || t === "yes") return true;
-    if (t === "false" || t === "0" || t === "no") return false;
+    if (t === "true" || t === "1" || t === "yes") {
+      return true;
+    }
+    if (t === "false" || t === "0" || t === "no") {
+      return false;
+    }
   }
-  if (typeof value === "number") return value !== 0;
+  if (typeof value === "number") {
+    return value !== 0;
+  }
   return undefined;
 }
 
@@ -72,13 +80,21 @@ function coerceCheckboxMode(value: unknown): number | undefined {
     num = Math.round(value);
   } else if (typeof value === "string") {
     const trimmed = value.trim().toLowerCase();
-    if (trimmed in MODE_ALIASES) return MODE_ALIASES[trimmed];
+    if (trimmed in MODE_ALIASES) {
+      return MODE_ALIASES[trimmed];
+    }
     const parsed = Number(trimmed);
-    if (!Number.isNaN(parsed)) num = Math.round(parsed);
+    if (!Number.isNaN(parsed)) {
+      num = Math.round(parsed);
+    }
   }
-  if (num === undefined) return undefined;
+  if (num === undefined) {
+    return undefined;
+  }
   // mode only allows 0 (single-select) or 1 (multi-select), clamp out-of-range values
-  if (num <= 0) return 0;
+  if (num <= 0) {
+    return 0;
+  }
   return 1;
 }
 
@@ -103,7 +119,7 @@ function coerceCheckboxMode(value: unknown): number | undefined {
  */
 function normalizeTemplateCardFields(
   card: Record<string, unknown>,
-  log?: (...args: any[]) => void,
+  log?: (...args: unknown[]) => void,
 ): Record<string, unknown> {
   const fixes: string[] = [];
 
@@ -263,13 +279,13 @@ function normalizeTemplateCardFields(
 // ============================================================================
 
 /** Valid characters for task_id: digits, letters, _-@ */
-const TASK_ID_RE = /^[a-zA-Z0-9_\-@]+$/;
+const _TASK_ID_RE = /^[a-zA-Z0-9_\-@]+$/;
 
 /**
  * Generates a valid task_id.
  * Format: task_{cardType}_{timestamp}_{random4chars}, ensuring uniqueness and API compliance.
  */
-function generateTaskId(cardType: string): string {
+function _generateTaskId(cardType: string): string {
   const rand = Math.random().toString(36).slice(2, 6);
   return `task_${cardType}_${Date.now()}_${rand}`;
 }
@@ -292,7 +308,7 @@ function generateTaskId(cardType: string): string {
  */
 function validateAndFixRequiredFields(
   card: Record<string, unknown>,
-  log?: (...args: any[]) => void,
+  log?: (...args: unknown[]) => void,
 ): Record<string, unknown> {
   const cardType = card.card_type as string;
   const fixes: string[] = [];
@@ -330,8 +346,7 @@ function validateAndFixRequiredFields(
     typeof mainTitle === "object" &&
     typeof mainTitle.title === "string" &&
     mainTitle.title.trim();
-  const hasSubTitleText =
-    typeof card.sub_title_text === "string" && (card.sub_title_text as string).trim();
+  const hasSubTitleText = typeof card.sub_title_text === "string" && card.sub_title_text.trim();
 
   switch (cardType) {
     case "text_notice":
@@ -351,7 +366,7 @@ function validateAndFixRequiredFields(
         card.main_title = { title: "通知" };
         fixes.push(`main_title: (missing) → { title: "通知" }`);
       } else if (!hasMainTitle) {
-        (mainTitle as Record<string, unknown>).title = "通知";
+        mainTitle.title = "通知";
         fixes.push(`main_title.title: (empty) → "通知"`);
       }
       break;
@@ -434,7 +449,7 @@ function generateKey(prefix: string): string {
  */
 function transformVoteInteraction(
   card: Record<string, unknown>,
-  log?: (...args: any[]) => void,
+  log?: (...args: unknown[]) => void,
 ): Record<string, unknown> {
   // Defensive: skip if already in valid API format
   const existingCheckbox = card.checkbox as Record<string, unknown> | undefined;
@@ -488,7 +503,9 @@ function transformVoteInteraction(
     question_key: questionKey,
     mode,
     option_list: clampedOptions.map((opt) => ({
+      // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
       id: String(opt.id ?? opt.value ?? `opt_${Math.random().toString(36).slice(2, 6)}`),
+      // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
       text: String(opt.text ?? opt.label ?? opt.name ?? ""),
     })),
   };
@@ -528,7 +545,7 @@ function transformVoteInteraction(
  */
 function transformMultipleInteraction(
   card: Record<string, unknown>,
-  log?: (...args: any[]) => void,
+  log?: (...args: unknown[]) => void,
 ): Record<string, unknown> {
   // Defensive: skip if already in valid API format
   const existingSelectList = card.select_list as Array<Record<string, unknown>> | undefined;
@@ -580,9 +597,12 @@ function transformMultipleInteraction(
     const selectorOptions = ((sel.options as Array<Record<string, unknown>>) ?? []).slice(0, 10);
     return {
       question_key: generateKey(`sel_${idx}`),
+      // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
       title: String(sel.title ?? sel.label ?? `选择${idx + 1}`),
       option_list: selectorOptions.map((opt) => ({
+        // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
         id: String(opt.id ?? opt.value ?? `opt_${Math.random().toString(36).slice(2, 6)}`),
+        // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
         text: String(opt.text ?? opt.label ?? opt.name ?? ""),
       })),
     };
@@ -608,7 +628,7 @@ function transformMultipleInteraction(
  */
 function transformSimplifiedCard(
   card: Record<string, unknown>,
-  log?: (...args: any[]) => void,
+  log?: (...args: unknown[]) => void,
 ): Record<string, unknown> {
   const cardType = card.card_type as string;
   if (cardType === "vote_interaction") {
@@ -652,7 +672,7 @@ const UNCLOSED_BLOCK_RE = /```(?:json)?\s*\n[\s\S]*$/;
  */
 export function extractTemplateCards(
   text: string,
-  log?: (...args: any[]) => void,
+  log?: (...args: unknown[]) => void,
 ): TemplateCardExtractionResult {
   const cards: ExtractedTemplateCard[] = [];
   /** Code blocks to be removed from the original text (records the full match content) */
@@ -743,7 +763,7 @@ export function extractTemplateCards(
  * @param text - Current accumulated text
  * @returns Masked display text
  */
-export function maskTemplateCardBlocks(text: string, log?: (...args: any[]) => void): string {
+export function maskTemplateCardBlocks(text: string, _log?: (...args: unknown[]) => void): string {
   let masked = text;
   let closedMaskCount = 0;
   let unclosedMasked = false;

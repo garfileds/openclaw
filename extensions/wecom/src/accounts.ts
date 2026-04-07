@@ -2,7 +2,6 @@ import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/acco
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-runtime";
 import { CHANNEL_ID } from "./const.js";
 import type { ResolvedAgentAccount } from "./types/account.js";
-import type { WecomAgentConfig } from "./types/config.js";
 import type { WeComConfig, WeComAccountConfig, ResolvedWeComAccount } from "./utils.js";
 import { DefaultWsUrl } from "./utils.js";
 
@@ -54,7 +53,7 @@ export function listWeComAccountIds(cfg: OpenClawConfig): string[] {
     // Backward compatibility: use default account when accounts is not configured
     return [DEFAULT_ACCOUNT_ID];
   }
-  return [...ids].sort((a: string, b: string) => a.localeCompare(b));
+  return [...ids].toSorted((a: string, b: string) => a.localeCompare(b));
 }
 
 // ============================================================================
@@ -125,13 +124,19 @@ function findAccountConfig(
   accounts: Record<string, WeComAccountConfig> | undefined,
   accountId: string,
 ): WeComAccountConfig {
-  if (!accounts) return {};
+  if (!accounts) {
+    return {};
+  }
   // Exact match first
-  if (accounts[accountId]) return accounts[accountId];
+  if (accounts[accountId]) {
+    return accounts[accountId];
+  }
   // Match after normalization
   const normalized = normalizeAccountId(accountId);
   for (const [key, value] of Object.entries(accounts)) {
-    if (normalizeAccountId(key) === normalized) return value;
+    if (normalizeAccountId(key) === normalized) {
+      return value;
+    }
   }
   return {};
 }
@@ -154,7 +159,7 @@ export function resolveWeComAccountMulti(params: {
 }): ResolvedWeComAccount {
   const hasExplicitId = typeof params.accountId === "string" && params.accountId.trim() !== "";
   const accountId = hasExplicitId
-    ? normalizeAccountId(params.accountId!)
+    ? normalizeAccountId(params.accountId)
     : resolveDefaultWeComAccountId(params.cfg);
 
   const wecomConfig = params.cfg.channels?.[CHANNEL_ID] as WeComMultiAccountConfig | undefined;
@@ -169,7 +174,7 @@ export function resolveWeComAccountMulti(params: {
   const accountEnabled = merged.enabled !== false;
 
   // Resolve Agent sub-configuration
-  const agentCfg = merged.agent as WecomAgentConfig | undefined;
+  const agentCfg = merged.agent;
   let agent: ResolvedAgentAccount | undefined;
   if (agentCfg?.corpId && agentCfg?.corpSecret && agentCfg?.token && agentCfg?.encodingAESKey) {
     agent = {
@@ -216,7 +221,9 @@ export function listEnabledWeComAccounts(cfg: OpenClawConfig): ResolvedWeComAcco
   return listWeComAccountIds(cfg)
     .map((accountId) => resolveWeComAccountMulti({ cfg, accountId }))
     .filter((account) => {
-      if (!account.enabled) return false;
+      if (!account.enabled) {
+        return false;
+      }
       const hasBotCredentials = Boolean(account.botId?.trim() && account.secret?.trim());
       const hasAgentCredentials = Boolean(account.agent?.configured);
       return hasBotCredentials || hasAgentCredentials;

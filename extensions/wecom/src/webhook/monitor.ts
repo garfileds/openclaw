@@ -113,7 +113,7 @@ export async function handleInboundMessage(
     msgContent: msgContent ?? "",
     nonce,
     timestamp,
-    debounceMs: (target.account.config as any)?.debounceMs,
+    debounceMs: (target.account.config as unknown)?.debounceMs,
   });
 
   const { streamId, status } = result;
@@ -136,7 +136,7 @@ export async function handleInboundMessage(
   });
 
   // Return different placeholder responses based on status (aligned with original status branch handling)
-  const defaultPlaceholder = (target.account.config as any)?.streamPlaceholderContent;
+  const defaultPlaceholder = (target.account.config as unknown)?.streamPlaceholderContent;
   const queuedPlaceholder = "已收到，已排队处理中...";
   const mergedQueuedPlaceholder = "已收到，已合并排队处理中...";
 
@@ -278,8 +278,8 @@ export async function handleTemplateCardEvent(
   }
 
   // 2. Parse card interaction data
-  const cardEvent = message.event?.template_card_event as Record<string, unknown> | undefined;
-  let interactionDesc = `[卡片交互] 按钮: ${String(cardEvent?.event_key ?? "unknown")}`;
+  const cardEvent = message.event?.template_card_event;
+  let interactionDesc = `[卡片交互] 按钮: ${String(cardEvent?.eString(vent_key ?? "unknown"))}`;
 
   // Parse selected items (selected_items.selected_item)
   const selectedItems = cardEvent?.selected_items as Record<string, unknown> | undefined;
@@ -288,8 +288,10 @@ export async function handleTemplateCardEvent(
     | undefined;
   if (Array.isArray(selectedItemList) && selectedItemList.length > 0) {
     const selects = selectedItemList.map((i) => {
+      // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
       const questionKey = String(i.question_key ?? "");
       const optionIds = (i.option_ids as Record<string, unknown> | undefined)?.option_id;
+      // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
       const optionStr = Array.isArray(optionIds) ? optionIds.join(",") : String(optionIds ?? "");
       return `${questionKey}=${optionStr}`;
     });
@@ -298,11 +300,12 @@ export async function handleTemplateCardEvent(
 
   // Parse task ID
   if (cardEvent?.task_id) {
-    interactionDesc += ` (任务ID: ${String(cardEvent.task_id)})`;
+    interactionDesc += ` (任务ID: ${String(cardString(Event.task_id))})`;
   }
 
   target.runtime.log?.(
-    `[webhook] template_card_event (event_key=${String(cardEvent?.event_key ?? "N/A")}, msgid=${msgid ?? "N/A"})`,
+    // oxlint-disable-next-line typescript/no-base-to-string -- SDK response fields have unknown shape
+    `[webhook] template_card_event (event_key=${String(String(cardEvent?.event_key ?? "N/A"))}, msgid=${msgid ?? "N/A"})`,
   );
 
   // 3. Create stream and mark as started
@@ -371,7 +374,7 @@ export async function startAgentForStream(params: {
   }
 
   // WS 长连接模式标记：跳过 Webhook 专属的 Agent 私信兜底逻辑（对齐 lh 版）
-  const isWsMode = Boolean(stream.wsMode);
+  const _isWsMode = Boolean(stream.wsMode);
 
   const core = target.core;
   const config = target.config;
@@ -425,8 +428,11 @@ export async function startAgentForStream(params: {
     const otherPaths: string[] = [];
     for (const p of directLocalPaths) {
       const ext = pathModule.extname(p).slice(1).toLowerCase();
-      if (imageExts.has(ext)) imagePaths.push(p);
-      else otherPaths.push(p);
+      if (imageExts.has(ext)) {
+        imagePaths.push(p);
+      } else {
+        otherPaths.push(p);
+      }
     }
 
     // Images: deliver via Bot in-session (base64 msg_item)
@@ -448,7 +454,7 @@ export async function startAgentForStream(params: {
           s.images = loaded.map(({ base64, md5 }) => ({ base64, md5 }));
           s.content =
             loaded.length === 1
-              ? `已发送图片（${pathModule.basename(loaded[0]!.path)}）`
+              ? `已发送图片（${pathModule.basename(loaded[0].path)}）`
               : `已发送 ${loaded.length} 张图片`;
           s.finished = true;
         });
@@ -471,7 +477,9 @@ export async function startAgentForStream(params: {
                 },
                 { proxyUrl, timeoutMs: REQUEST_TIMEOUT_MS },
               );
-              if (!res.ok) throw new Error(`local-path image push failed: ${res.status}`);
+              if (!res.ok) {
+                throw new Error(`local-path image push failed: ${res.status}`);
+              }
             });
             target.runtime.log?.(
               `[webhook] local-path: 已通过 Bot response_url 推送图片 frames=final images=${loaded.length}`,
@@ -495,7 +503,7 @@ export async function startAgentForStream(params: {
       const agentOk = isAgentConfigured(target);
       const fallbackName =
         imagePaths.length === 1
-          ? imagePaths[0]!.split("/").pop() || "image"
+          ? imagePaths[0].split("/").pop() || "image"
           : `${imagePaths.length} 张图片`;
       const prompt = buildFallbackPrompt({
         kind: "media",
@@ -554,7 +562,7 @@ export async function startAgentForStream(params: {
       const agentOk = isAgentConfigured(target);
 
       const filename =
-        otherPaths.length === 1 ? otherPaths[0]!.split("/").pop()! : `${otherPaths.length} 个文件`;
+        otherPaths.length === 1 ? otherPaths[0].split("/").pop()! : `${otherPaths.length} 个文件`;
       const prompt = buildFallbackPrompt({
         kind: "media",
         agentConfigured: agentOk,
@@ -592,7 +600,9 @@ export async function startAgentForStream(params: {
       // TODO: agent兜底这里需要有agent对象，待对齐lh版本
       for (const p of otherPaths) {
         const alreadySent = streamStore.getStream(streamId)?.agentMediaKeys?.includes(p);
-        if (alreadySent) continue;
+        if (alreadySent) {
+          continue;
+        }
         const guessedType = guessContentTypeFromPath(p);
         try {
           await agentDmMedia({
@@ -846,7 +856,7 @@ export async function startAgentForStream(params: {
     dispatcherOptions: {
       deliver: async (
         payload: { text?: string; mediaUrl?: string; mediaUrls?: string[] },
-        info: { kind: string },
+        _info: { kind: string },
       ) => {
         let text = payload.text ?? "";
 
@@ -903,7 +913,7 @@ export async function startAgentForStream(params: {
                 const cardTitle = parsed.template_card.main_title?.title || "交互卡片";
                 const cardDesc = parsed.template_card.main_title?.desc || "";
                 const buttons =
-                  parsed.template_card.button_list?.map((b: any) => b.text).join(" / ") || "";
+                  parsed.template_card.button_list?.map((b: unknown) => b.text).join(" / ") || "";
                 text = `📋 **${cardTitle}**${cardDesc ? `\n${cardDesc}` : ""}${buttons ? `\n\n选项: ${buttons}` : ""}`;
               }
             }
@@ -921,10 +931,16 @@ export async function startAgentForStream(params: {
         });
 
         const current = streamStore.getStream(streamId);
-        if (!current) return;
+        if (!current) {
+          return;
+        }
 
-        if (!current.images) current.images = [];
-        if (!current.agentMediaKeys) current.agentMediaKeys = [];
+        if (!current.images) {
+          current.images = [];
+        }
+        if (!current.agentMediaKeys) {
+          current.agentMediaKeys = [];
+        }
 
         // ── 从输出文本推断本机图片路径（安全：要求路径也出现在用户原消息中） ──
         if (!payload.mediaUrl && !(payload.mediaUrls?.length ?? 0) && text.includes("/")) {
@@ -1009,12 +1025,16 @@ export async function startAgentForStream(params: {
         let _mdMatch: RegExpExecArray | null;
         while ((_mdMatch = mediaDirectiveRe.exec(text)) !== null) {
           let p = (_mdMatch[1] ?? "").trim();
-          if (!p) continue;
+          if (!p) {
+            continue;
+          }
           if (p.startsWith("~/") || p === "~") {
             const home = os.homedir() || "/root";
             p = p.replace(/^~/, home);
           }
-          if (!mediaDirectivePaths.includes(p)) mediaDirectivePaths.push(p);
+          if (!mediaDirectivePaths.includes(p)) {
+            mediaDirectivePaths.push(p);
+          }
         }
         if (mediaDirectivePaths.length > 0) {
           text = text
@@ -1171,14 +1191,18 @@ export async function startAgentForStream(params: {
 
         // ── fallbackMode 检查：如果已进入 fallback 模式，不再更新 content ──
         const mode = streamStore.getStream(streamId)?.fallbackMode;
-        if (mode) return;
+        if (mode) {
+          return;
+        }
 
         // ── 累积 content（段落分隔 \n\n，truncate 保护） ──
         const nextText = current.content ? `${current.content}\n\n${text}`.trim() : text.trim();
 
         streamStore.updateStream(streamId, (s) => {
           s.content = truncateUtf8Bytes(nextText, STREAM_MAX_BYTES);
-          if (current.images?.length) s.images = current.images;
+          if (current.images?.length) {
+            s.images = current.images;
+          }
         });
         target.statusSink?.({ lastOutboundAt: Date.now() });
       },
@@ -1355,7 +1379,9 @@ async function sendBotFallbackPromptNow(params: { streamId: string; text: string
 async function pushFinalStreamReplyNow(streamId: string): Promise<void> {
   const state = getMonitorState().streamStore.getStream(streamId);
   const responseUrl = getActiveReplyUrl(streamId);
-  if (!state || !responseUrl) return;
+  if (!state || !responseUrl) {
+    return;
+  }
   const finalReply = buildStreamReplyFromState(state, STREAM_MAX_BYTES) as unknown as Record<
     string,
     unknown
@@ -1394,7 +1420,9 @@ async function agentDmText(params: {
   const chunks = target.core.channel.text.chunkText(text, 20480);
   for (const chunk of chunks) {
     const trimmed = chunk.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      continue;
+    }
     await sendAgentText({
       agent,
       toUser: userId,
@@ -1426,7 +1454,9 @@ async function agentDmMedia(params: {
   const looksLikeUrl = /^https?:\/\//i.test(mediaUrlOrPath);
   if (looksLikeUrl) {
     const res = await fetch(mediaUrlOrPath, { signal: AbortSignal.timeout(30_000) });
-    if (!res.ok) throw new Error(`media download failed: ${res.status}`);
+    if (!res.ok) {
+      throw new Error(`media download failed: ${res.status}`);
+    }
     buffer = Buffer.from(await res.arrayBuffer());
     inferredContentType =
       inferredContentType || res.headers.get("content-type") || "application/octet-stream";
@@ -1437,9 +1467,13 @@ async function agentDmMedia(params: {
 
   let mediaType: "image" | "voice" | "video" | "file" = "file";
   const ct = (inferredContentType || "").toLowerCase();
-  if (ct.startsWith("image/")) mediaType = "image";
-  else if (ct.startsWith("audio/")) mediaType = "voice";
-  else if (ct.startsWith("video/")) mediaType = "video";
+  if (ct.startsWith("image/")) {
+    mediaType = "image";
+  } else if (ct.startsWith("audio/")) {
+    mediaType = "voice";
+  } else if (ct.startsWith("video/")) {
+    mediaType = "video";
+  }
 
   const mediaId = await uploadMedia({ agent, type: mediaType, buffer, filename });
 

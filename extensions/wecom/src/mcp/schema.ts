@@ -34,8 +34,12 @@ const GEMINI_UNSUPPORTED_KEYWORDS = new Set([
  * unsupported by Gemini, preventing 400 errors when Gemini parses function responses.
  */
 export function cleanSchemaForGemini(schema: unknown): unknown {
-  if (!schema || typeof schema !== "object") return schema;
-  if (Array.isArray(schema)) return schema.map(cleanSchemaForGemini);
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+  if (Array.isArray(schema)) {
+    return schema.map(cleanSchemaForGemini);
+  }
 
   const obj = schema as Record<string, unknown>;
 
@@ -55,8 +59,12 @@ function cleanWithDefs(
   defs: Record<string, unknown>,
   refStack: Set<string>,
 ): unknown {
-  if (!schema || typeof schema !== "object") return schema;
-  if (Array.isArray(schema)) return schema.map((item) => cleanWithDefs(item, defs, refStack));
+  if (!schema || typeof schema !== "object") {
+    return schema;
+  }
+  if (Array.isArray(schema)) {
+    return schema.map((item) => cleanWithDefs(item, defs, refStack));
+  }
 
   const obj = schema as Record<string, unknown>;
 
@@ -71,7 +79,9 @@ function cleanWithDefs(
   // Handle $ref references: attempt inline resolution
   if (typeof obj.$ref === "string") {
     const ref = obj.$ref;
-    if (refStack.has(ref)) return {}; // Prevent circular references
+    if (refStack.has(ref)) {
+      return {};
+    } // Prevent circular references
 
     const match = ref.match(/^#\/(?:\$defs|definitions)\/(.+)$/);
     if (match && match[1] && defs[match[1]]) {
@@ -84,7 +94,9 @@ function cleanWithDefs(
 
   const cleaned: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (GEMINI_UNSUPPORTED_KEYWORDS.has(key)) continue;
+    if (GEMINI_UNSUPPORTED_KEYWORDS.has(key)) {
+      continue;
+    }
 
     if (key === "const") {
       cleaned.enum = [value];
@@ -105,7 +117,9 @@ function cleanWithDefs(
     } else if ((key === "anyOf" || key === "oneOf" || key === "allOf") && Array.isArray(value)) {
       // Filter out null type variants
       const nonNull = value.filter((v) => {
-        if (!v || typeof v !== "object") return true;
+        if (!v || typeof v !== "object") {
+          return true;
+        }
         const r = v as Record<string, unknown>;
         return r.type !== "null";
       });

@@ -82,7 +82,7 @@ export interface WeComRequest {
   headers: {
     req_id: string;
   };
-  body: any;
+  body: unknown;
 }
 
 /**

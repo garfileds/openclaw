@@ -115,7 +115,9 @@ export class StreamStore {
   setStreamIdForMsgId(msgid: string, streamId: string): void {
     const key = String(msgid).trim();
     const value = String(streamId).trim();
-    if (!key || !value) return;
+    if (!key || !value) {
+      return;
+    }
     this.msgidToStreamId.set(key, value);
   }
 
@@ -126,7 +128,9 @@ export class StreamStore {
   addAckStreamForBatch(params: { batchStreamId: string; ackStreamId: string }): void {
     const batchStreamId = params.batchStreamId.trim();
     const ackStreamId = params.ackStreamId.trim();
-    if (!batchStreamId || !ackStreamId) return;
+    if (!batchStreamId || !ackStreamId) {
+      return;
+    }
     const list = this.batchStreamIdToAckStreamIds.get(batchStreamId) ?? [];
     list.push(ackStreamId);
     this.batchStreamIdToAckStreamIds.set(batchStreamId, list);
@@ -137,7 +141,9 @@ export class StreamStore {
    */
   drainAckStreamsForBatch(batchStreamId: string): string[] {
     const key = batchStreamId.trim();
-    if (!key) return [];
+    if (!key) {
+      return [];
+    }
     const list = this.batchStreamIdToAckStreamIds.get(key) ?? [];
     this.batchStreamIdToAckStreamIds.delete(key);
     return list;
@@ -249,7 +255,9 @@ export class StreamStore {
           activePending.msgids.push(msg.msgid);
           // Note: do not map this msgid to the active streamId, to avoid this message also showing the same full final answer
         }
-        if (activePending.timeout) clearTimeout(activePending.timeout);
+        if (activePending.timeout) {
+          clearTimeout(activePending.timeout);
+        }
         activePending.timeout = setTimeout(() => {
           this.requestFlush(activeBatchKey);
         }, effectiveDebounceMs);
@@ -267,7 +275,9 @@ export class StreamStore {
           existingQueued.msgids.push(msg.msgid);
           // Note: do not map this msgid to the queued streamId, to avoid this message also showing the same full final answer
         }
-        if (existingQueued.timeout) clearTimeout(existingQueued.timeout);
+        if (existingQueued.timeout) {
+          clearTimeout(existingQueued.timeout);
+        }
 
         existingQueued.timeout = setTimeout(() => {
           this.requestFlush(queuedBatchKey);
@@ -306,7 +316,9 @@ export class StreamStore {
    */
   private requestFlush(batchKey: string): void {
     const pending = this.pendingInbounds.get(batchKey);
-    if (!pending) return;
+    if (!pending) {
+      return;
+    }
 
     const state = this.conversationState.get(pending.conversationKey);
     const isActive = state?.activeBatchKey === batchKey;
@@ -328,7 +340,9 @@ export class StreamStore {
    */
   private flushPending(pendingKey: string): void {
     const pending = this.pendingInbounds.get(pendingKey);
-    if (!pending) return;
+    if (!pending) {
+      return;
+    }
 
     this.pendingInbounds.delete(pendingKey);
     if (pending.timeout) {
@@ -349,11 +363,17 @@ export class StreamStore {
     const batchKey = this.streamIdToBatchKey.get(streamId);
     const state = batchKey ? this.streams.get(streamId) : undefined;
     const conversationKey = state?.conversationKey;
-    if (!batchKey || !conversationKey) return;
+    if (!batchKey || !conversationKey) {
+      return;
+    }
 
     const conv = this.conversationState.get(conversationKey);
-    if (!conv) return;
-    if (conv.activeBatchKey !== batchKey) return;
+    if (!conv) {
+      return;
+    }
+    if (conv.activeBatchKey !== batchKey) {
+      return;
+    }
 
     const next = conv.queue.shift();
     if (!next) {
@@ -365,7 +385,9 @@ export class StreamStore {
     this.conversationState.set(conversationKey, conv);
 
     const pending = this.pendingInbounds.get(next);
-    if (!pending) return;
+    if (!pending) {
+      return;
+    }
     if (pending.readyToFlush) {
       this.flushPending(next);
     }
@@ -404,7 +426,9 @@ export class StreamStore {
     // 清理超时的 Pending 消息 (通常由 timeout 清理，此处作为兜底)
     for (const [key, pending] of this.pendingInbounds.entries()) {
       if (now - pending.createdAt > LIMITS.STREAM_TTL_MS) {
-        if (pending.timeout) clearTimeout(pending.timeout);
+        if (pending.timeout) {
+          clearTimeout(pending.timeout);
+        }
         this.pendingInbounds.delete(key);
       }
     }
@@ -443,7 +467,9 @@ export class ActiveReplyStore {
    */
   store(streamId: string, responseUrl?: string, proxyUrl?: string): void {
     const url = responseUrl?.trim();
-    if (!url) return;
+    if (!url) {
+      return;
+    }
     this.activeReplies.set(streamId, { response_url: url, proxyUrl, createdAt: Date.now() });
   }
 
@@ -531,7 +557,9 @@ export class WebhookMonitorState {
    * @param intervalMs 清理间隔 (默认 60s)
    */
   public startPruning(intervalMs: number = 60_000): void {
-    if (this.pruneInterval) return;
+    if (this.pruneInterval) {
+      return;
+    }
     this.pruneInterval = setInterval(() => {
       const now = Date.now();
       this.streamStore.prune(now);

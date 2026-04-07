@@ -70,8 +70,10 @@ export function createPersistentReqIdStore(
    * Uses Map insertion order + touch (delete then set) for LRU-like behavior.
    */
   function pruneMemory(): void {
-    if (memory.size <= memoryMaxSize) return;
-    const sorted = [...memory.entries()].sort((a, b) => a[1].ts - b[1].ts);
+    if (memory.size <= memoryMaxSize) {
+      return;
+    }
+    const sorted = [...memory.entries()].toSorted((a, b) => a[1].ts - b[1].ts);
     const toRemove = sorted.slice(0, memory.size - memoryMaxSize);
     for (const [key] of toRemove) {
       memory.delete(key);

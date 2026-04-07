@@ -7,10 +7,10 @@
 
 import crypto from "node:crypto";
 import { pkcs7Unpad, decodeEncodingAESKey } from "@wecom/aibot-node-sdk";
-import { fileTypeFromBuffer } from "file-type";
-import { request } from "undici";
+import { _fileTypeFromBuffer } from "file-type";
+import { _request } from "undici";
 import { wecomFetch, readResponseBodyAsBuffer, type WecomHttpOptions } from "./http.js";
-import { REQUEST_TIMEOUT_MS } from "./types.js";
+import { _REQUEST_TIMEOUT_MS } from "./types.js";
 
 // ============================================================================
 // Media file decryption
@@ -84,14 +84,18 @@ export async function decryptWecomMediaWithMeta(
 /** Normalize MIME type */
 function normalizeMime(contentType?: string | null): string | undefined {
   const raw = String(contentType ?? "").trim();
-  if (!raw) return undefined;
+  if (!raw) {
+    return undefined;
+  }
   return raw.split(";")[0]?.trim().toLowerCase() || undefined;
 }
 
 /** Extract filename from Content-Disposition */
 function extractFilenameFromContentDisposition(disposition?: string | null): string | undefined {
   const raw = String(disposition ?? "").trim();
-  if (!raw) return undefined;
+  if (!raw) {
+    return undefined;
+  }
 
   // Prefer filename* (RFC 5987 encoding)
   const star = raw.match(/filename\*\s*=\s*([^;]+)/i);
@@ -102,11 +106,15 @@ function extractFilenameFromContentDisposition(disposition?: string | null): str
       .replace(/^"(.*)"$/, "$1");
     try {
       const decoded = decodeURIComponent(v);
-      if (decoded.trim()) return decoded.trim();
+      if (decoded.trim()) {
+        return decoded.trim();
+      }
     } catch {
       /* ignore */
     }
-    if (v.trim()) return v.trim();
+    if (v.trim()) {
+      return v.trim();
+    }
   }
 
   // Then try filename
@@ -116,7 +124,9 @@ function extractFilenameFromContentDisposition(disposition?: string | null): str
       .trim()
       .replace(/^"(.*)"$/, "$1")
       .trim();
-    if (v) return v;
+    if (v) {
+      return v;
+    }
   }
   return undefined;
 }

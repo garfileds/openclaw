@@ -102,8 +102,12 @@ export function startWebhookGateway(ctx: WebhookGatewayContext): void {
   // 1. Validate required config (receiveId is optional and can be empty)
   if (!account.token || !account.encodingAESKey) {
     const missing: string[] = [];
-    if (!account.token) missing.push("token");
-    if (!account.encodingAESKey) missing.push("encodingAESKey");
+    if (!account.token) {
+      missing.push("token");
+    }
+    if (!account.encodingAESKey) {
+      missing.push("encodingAESKey");
+    }
 
     const errorMsg = `[webhook] Webhook 配置不完整，缺少: ${missing.join(", ")}`;
     log.error(errorMsg);
@@ -141,7 +145,7 @@ export function startWebhookGateway(ctx: WebhookGatewayContext): void {
     account,
     config,
     runtime: runtimeEnv,
-    core: (ctx.channelRuntime ?? runtime) as any, // PluginRuntime instance
+    core: (ctx.channelRuntime ?? runtime) as unknown, // PluginRuntime instance
     path: `${WEBHOOK_PATHS.BOT_PLUGIN}/${ctx.accountId}`, // Primary path (for logging and status display)
     statusSink: ctx.setStatus
       ? (patch) => ctx.setStatus?.({ accountId: ctx.accountId, ...patch })
