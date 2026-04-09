@@ -79,8 +79,12 @@ describe("production lint suppressions", () => {
   it("keeps the intentional production suppression tail on an explicit allowlist", () => {
     expect(summarizeSuppressions(collectProductionLintSuppressions())).toEqual([
       "extensions/browser/src/browser/pw-tools-core.interactions.ts|@typescript-eslint/no-implied-eval|2",
-      "extensions/wecom/src/openclaw-compat.ts|typescript/no-explicit-any|2",
-      "extensions/wecom/src/webhook/helpers.ts|typescript/no-explicit-any|1",
+      "extensions/wecom/index.ts|typescript/no-explicit-any|1",
+      "extensions/wecom/src/channel.ts|typescript/no-explicit-any|2",
+      "extensions/wecom/src/mcp/interceptors/types.ts|typescript/no-redundant-type-constituents|1",
+      "extensions/wecom/src/message-sender.ts|typescript/no-redundant-type-constituents|1",
+      "extensions/wecom/src/openclaw-compat.ts|typescript/no-explicit-any|4",
+      "extensions/wecom/src/webhook/helpers.ts|no-control-regex|1",
       "scripts/e2e/mcp-channels-harness.ts|unicorn/prefer-add-event-listener|1",
       "src/agents/agent-scope-config.ts|no-control-regex|1",
       "src/agents/agent-scope.ts|no-control-regex|1",
@@ -103,6 +107,22 @@ describe("production lint suppressions", () => {
 
     expect(anySuppressions).toEqual([
       {
+        file: "extensions/wecom/index.ts",
+        rule: "typescript/no-explicit-any",
+      },
+      {
+        file: "extensions/wecom/src/channel.ts",
+        rule: "typescript/no-explicit-any",
+      },
+      {
+        file: "extensions/wecom/src/channel.ts",
+        rule: "typescript/no-explicit-any",
+      },
+      {
+        file: "extensions/wecom/src/openclaw-compat.ts",
+        rule: "typescript/no-explicit-any",
+      },
+      {
         file: "extensions/wecom/src/openclaw-compat.ts",
         rule: "typescript/no-explicit-any",
       },
@@ -111,7 +131,7 @@ describe("production lint suppressions", () => {
         rule: "typescript/no-explicit-any",
       },
       {
-        file: "extensions/wecom/src/webhook/helpers.ts",
+        file: "extensions/wecom/src/openclaw-compat.ts",
         rule: "typescript/no-explicit-any",
       },
       {
