@@ -1391,6 +1391,7 @@
     "discord-api-types": "^0.38.45",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
+    "fast-xml-parser": "5.5.7",
     "file-type": "22.0.1",
     "gaxios": "7.1.4",
     "google-auth-library": "^10.6.2",
